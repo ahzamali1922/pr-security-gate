@@ -6,6 +6,7 @@ pipeline never breaks because the AI provider is unavailable.
 
 Environment:
     ANTHROPIC_API_KEY  if set, use the Anthropic API (recommended)
+    MODELS_TOKEN   personal access token with the Models permission (preferred for GitHub Models)
     GITHUB_TOKEN   token with `models: read` permission (GitHub Models fallback)
     AI_MODEL       model id, default "openai/gpt-4o-mini"
     AI_ENDPOINT    chat completions URL, default GitHub Models
@@ -189,7 +190,7 @@ def main(argv=None):
         print("AI provider: GitHub Models (set ANTHROPIC_API_KEY to use Anthropic)")
         enriched = enrich(
             findings,
-            token=os.environ.get("GITHUB_TOKEN"),
+            token=os.environ.get("MODELS_TOKEN") or os.environ.get("GITHUB_TOKEN"),
             model=os.environ.get("AI_MODEL", DEFAULT_MODEL),
             endpoint=os.environ.get("AI_ENDPOINT", DEFAULT_ENDPOINT),
             max_ai=int(os.environ.get("AI_MAX_FINDINGS", "15")),

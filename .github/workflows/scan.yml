@@ -97,6 +97,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          MODELS_TOKEN: ${{ secrets.MODELS_TOKEN }}
         run: python scripts/suggest_fixes.py --input findings.json --output enriched-findings.json
 
       # ---------- Stage 3: report to PR ----------
