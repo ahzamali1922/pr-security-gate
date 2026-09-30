@@ -71,7 +71,11 @@ def call_llm(prompt, token, model, endpoint):
     body = json.dumps({
         "model": model,
         "temperature": 0.2,
-        "messages": [{"role": "user", "content": prompt}],
+        "response_format": {"type": "json_object"},
+        "messages": [
+            {"role": "system", "content": "You answer only with a single JSON object."},
+            {"role": "user", "content": prompt},
+        ],
     }).encode("utf-8")
     request = urllib.request.Request(
         endpoint,
@@ -84,19 +88,21 @@ def call_llm(prompt, token, model, endpoint):
     )
     with urllib.request.urlopen(request, timeout=30) as response:
         payload = json.load(response)
-    return payload["choices"][0]["message"]["content"]
+    return payload["choices"][0]["message"].get("content") or ""
 
 
 def parse_reply(text):
     """Extract {"fix", "rationale"} from a model reply, tolerating code fences."""
-    text = text.strip()
-    if text.startswith("```"):
-        text = text.strip("`")
-        if text.lower().startswith("json"):
-            text = text[4:]
+    raw = text
+    text = (text or "").strip()
     start, end = text.find("{"), text.rfind("}")
-    data = json.loads(text[start:end + 1])
-    return str(data["fix"]).strip(), str(data["rationale"]).strip()
+    if start == -1 or end <= start:
+        raise ValueError(f"no JSON object in model reply: {raw!r:.200}")
+    try:
+        data = json.loads(text[start:end + 1])
+        return str(data["fix"]).strip(), str(data["rationale"]).strip()
+    except (KeyError, TypeError) as exc:
+        raise ValueError(f"model reply missing fix/rationale: {raw!r:.200}") from exc
 
 
 def fallback(finding):
