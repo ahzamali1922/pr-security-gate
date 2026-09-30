@@ -39,9 +39,22 @@ jobs:
         run: |
           npm install --save-dev eslint
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+            node-version: "20"
+
+      - name: Initialize npm
+        run: |
+          npm init -y
+
+      - name: Install ESLint
+        run: |
+          npm install --save-dev eslint
+
       - name: Run ESLint
         run: |
-          npx eslint demo-app/javascript -f json > eslint-report.json || true
+            npx eslint demo-app/javascript -f json > eslint-report.json || true
 
       - name: Upload scan reports
         uses: actions/upload-artifact@v4
