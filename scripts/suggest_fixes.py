@@ -5,7 +5,8 @@ If no token is set, or the call fails, a built-in rule-based hint is used so the
 pipeline never breaks because the AI provider is unavailable.
 
 Environment:
-    GITHUB_TOKEN   token with `models: read` permission (optional)
+    ANTHROPIC_API_KEY  if set, use the Anthropic API (recommended)
+    GITHUB_TOKEN   token with `models: read` permission (GitHub Models fallback)
     AI_MODEL       model id, default "openai/gpt-4o-mini"
     AI_ENDPOINT    chat completions URL, default GitHub Models
     AI_MAX_FINDINGS  max findings sent to the model per run, default 15
@@ -22,6 +23,8 @@ import urllib.request
 
 DEFAULT_ENDPOINT = "https://models.github.ai/inference/chat/completions"
 DEFAULT_MODEL = "openai/gpt-4o-mini"
+ANTHROPIC_ENDPOINT = "https://api.anthropic.com/v1/messages"
+ANTHROPIC_MODEL = "claude-haiku-4-5-20251001"
 CONTEXT_LINES = 3
 
 FALLBACK_HINTS = {
@@ -67,24 +70,12 @@ def build_prompt(finding, snippet):
     )
 
 
-def call_llm(prompt, token, model, endpoint):
-    body = json.dumps({
-        "model": model,
-        "temperature": 0.2,
-        "response_format": {"type": "json_object"},
-        "messages": [
-            {"role": "system", "content": "You answer only with a single JSON object."},
-            {"role": "user", "content": prompt},
-        ],
-    }).encode("utf-8")
+def post_json(endpoint, headers, body):
+    """POST a JSON body and return the parsed JSON response, with readable errors."""
     request = urllib.request.Request(
         endpoint,
-        data=body,
-        headers={
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-        },
+        data=json.dumps(body).encode("utf-8"),
+        headers={"Content-Type": "application/json", **headers},
     )
     try:
         with urllib.request.urlopen(request, timeout=30) as response:
@@ -94,10 +85,42 @@ def call_llm(prompt, token, model, endpoint):
         detail = exc.read().decode("utf-8", errors="replace")[:300]
         raise OSError(f"HTTP {exc.code} from {endpoint}: {detail}") from exc
     try:
-        payload = json.loads(raw)
+        return json.loads(raw)
     except ValueError as exc:
         raise ValueError(f"HTTP {status} but body is not JSON: {raw[:300]!r}") from exc
+
+
+def call_llm(prompt, token, model, endpoint):
+    """OpenAI-compatible chat completions (GitHub Models)."""
+    payload = post_json(
+        endpoint,
+        {"Authorization": f"Bearer {token}", "Accept": "application/json"},
+        {
+            "model": model,
+            "temperature": 0.2,
+            "response_format": {"type": "json_object"},
+            "messages": [
+                {"role": "system", "content": "You answer only with a single JSON object."},
+                {"role": "user", "content": prompt},
+            ],
+        },
+    )
     return payload["choices"][0]["message"].get("content") or ""
+
+
+def call_anthropic(prompt, token, model, endpoint):
+    """Anthropic Messages API."""
+    payload = post_json(
+        endpoint,
+        {"x-api-key": token, "anthropic-version": "2023-06-01"},
+        {
+            "model": model,
+            "max_tokens": 400,
+            "system": "You answer only with a single JSON object.",
+            "messages": [{"role": "user", "content": prompt}],
+        },
+    )
+    return "".join(b.get("text", "") for b in payload["content"] if b.get("type") == "text")
 
 
 def parse_reply(text):
@@ -151,13 +174,26 @@ def main(argv=None):
     with open(args.input, encoding="utf-8") as handle:
         findings = json.load(handle)
 
-    enriched = enrich(
-        findings,
-        token=os.environ.get("GITHUB_TOKEN"),
-        model=os.environ.get("AI_MODEL", DEFAULT_MODEL),
-        endpoint=os.environ.get("AI_ENDPOINT", DEFAULT_ENDPOINT),
-        max_ai=int(os.environ.get("AI_MAX_FINDINGS", "15")),
-    )
+    anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
+    if anthropic_key:
+        print("AI provider: Anthropic")
+        enriched = enrich(
+            findings,
+            token=anthropic_key,
+            model=os.environ.get("AI_MODEL", ANTHROPIC_MODEL),
+            endpoint=os.environ.get("AI_ENDPOINT", ANTHROPIC_ENDPOINT),
+            max_ai=int(os.environ.get("AI_MAX_FINDINGS", "15")),
+            llm=call_anthropic,
+        )
+    else:
+        print("AI provider: GitHub Models (set ANTHROPIC_API_KEY to use Anthropic)")
+        enriched = enrich(
+            findings,
+            token=os.environ.get("GITHUB_TOKEN"),
+            model=os.environ.get("AI_MODEL", DEFAULT_MODEL),
+            endpoint=os.environ.get("AI_ENDPOINT", DEFAULT_ENDPOINT),
+            max_ai=int(os.environ.get("AI_MAX_FINDINGS", "15")),
+        )
     with open(args.output, "w", encoding="utf-8") as handle:
         json.dump(enriched, handle, indent=2)
     ai_count = sum(1 for f in enriched if f["suggestion"]["source"] != "rule-based")
