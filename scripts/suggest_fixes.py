@@ -86,8 +86,17 @@ def call_llm(prompt, token, model, endpoint):
             "Accept": "application/json",
         },
     )
-    with urllib.request.urlopen(request, timeout=30) as response:
-        payload = json.load(response)
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            raw = response.read().decode("utf-8", errors="replace")
+            status = response.status
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")[:300]
+        raise OSError(f"HTTP {exc.code} from {endpoint}: {detail}") from exc
+    try:
+        payload = json.loads(raw)
+    except ValueError as exc:
+        raise ValueError(f"HTTP {status} but body is not JSON: {raw[:300]!r}") from exc
     return payload["choices"][0]["message"].get("content") or ""
 
 
