@@ -12,7 +12,7 @@ def read_file(filename):
         file = open(filename, "r")
         data = file.read()
         return data
-    except:
+    except OSError:
         return None
 
 

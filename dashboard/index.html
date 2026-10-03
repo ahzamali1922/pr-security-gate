@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PR Security Gate Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --text:#1c2330; --muted:#667085; --border:#e3e6ec;
+          --critical:#b42318; --high:#e8590c; --medium:#f0a20a; --low:#8a94a6; --accent:#2563eb; --ok:#1a7f4b; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#0f1420; --card:#171e2e; --text:#e8ecf4; --muted:#93a0b8; --border:#27314a; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:24px 16px; background:var(--bg); color:var(--text);
+         font:14px/1.5 system-ui, sans-serif; }
+  main { max-width:1100px; margin:0 auto; }
+  h1 { margin:0 0 4px; font-size:22px; }
+  .sub { color:var(--muted); margin-bottom:20px; }
+  .tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:12px; margin-bottom:16px; }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:10px; padding:16px; }
+  .tile b { display:block; font-size:28px; }
+  .tile span { color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.04em; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:12px; }
+  .card h2 { margin:0 0 10px; font-size:14px; }
+  canvas { max-height:260px; }
+  .bar { display:flex; gap:8px; align-items:center; margin-bottom:16px; flex-wrap:wrap; color:var(--muted); }
+  input[type=file] { color:var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <h1>PR Security Gate</h1>
+  <div class="sub" id="source">Loading…</div>
+  <div class="bar">Load real data: <input type="file" id="file" accept=".json"> (metrics.json from the <code>gate-results</code> artifact)</div>
+
+  <div class="tiles">
+    <div class="card tile"><b id="t-runs">–</b><span>Scans run</span></div>
+    <div class="card tile"><b id="t-issues">–</b><span>Issues found</span></div>
+    <div class="card tile"><b id="t-rescan">–</b><span>Gate pass rate</span></div>
+    <div class="card tile"><b id="t-ttf">–</b><span>Avg time-to-fix</span></div>
+  </div>
+
+  <div class="grid">
+    <div class="card"><h2>Severity breakdown (all runs)</h2><canvas id="c-sev"></canvas></div>
+    <div class="card"><h2>Issues per scan (trend)</h2><canvas id="c-trend"></canvas></div>
+    <div class="card"><h2>Time-to-fix per PR (minutes)</h2><canvas id="c-ttf"></canvas></div>
+    <div class="card"><h2>Gate result per scan</h2><canvas id="c-pass"></canvas></div>
+  </div>
+</main>
+
+<script>
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const SEV = ["critical", "high", "medium", "low"];
+let charts = [];
+
+function render(data) {
+  charts.forEach(c => c.destroy());
+  charts = [];
+  const text = css("--muted");
+  Chart.defaults.color = text;
+  Chart.defaults.borderColor = css("--border");
+
+  const passes = data.filter(r => r.gate_passed).length;
+  const fixes = data.filter(r => r.time_to_fix_minutes != null);
+  const avg = fixes.length ? fixes.reduce((s, r) => s + r.time_to_fix_minutes, 0) / fixes.length : null;
+  document.getElementById("t-runs").textContent = data.length;
+  document.getElementById("t-issues").textContent = data.reduce((s, r) => s + r.total, 0);
+  document.getElementById("t-rescan").textContent = data.length ? Math.round(100 * passes / data.length) + "%" : "–";
+  document.getElementById("t-ttf").textContent = avg == null ? "–" : Math.round(avg) + " min";
+
+  const labels = data.map((r, i) => `#${r.pr} · ${i + 1}`);
+  charts.push(new Chart(document.getElementById("c-sev"), {
+    type: "doughnut",
+    data: { labels: SEV, datasets: [{
+      data: SEV.map(s => data.reduce((t, r) => t + (r.severity[s] || 0), 0)),
+      backgroundColor: SEV.map(s => css("--" + s)) }] },
+    options: { plugins: { legend: { position: "bottom" } } }
+  }));
+  charts.push(new Chart(document.getElementById("c-trend"), {
+    type: "bar",
+    data: { labels, datasets: SEV.map(s => ({
+      label: s, data: data.map(r => r.severity[s] || 0), backgroundColor: css("--" + s) })) },
+    options: { scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true } },
+               plugins: { legend: { position: "bottom" } } }
+  }));
+  charts.push(new Chart(document.getElementById("c-ttf"), {
+    type: "bar",
+    data: { labels: fixes.map(r => "PR #" + r.pr),
+            datasets: [{ label: "minutes", data: fixes.map(r => r.time_to_fix_minutes), backgroundColor: css("--accent") }] },
+    options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
+  }));
+  charts.push(new Chart(document.getElementById("c-pass"), {
+    type: "bar",
+    data: { labels, datasets: [{ label: "passed (1) / failed (0)", data: data.map(r => r.gate_passed ? 1 : 0),
+            backgroundColor: data.map(r => r.gate_passed ? css("--ok") : css("--critical")) }] },
+    options: { plugins: { legend: { display: false } }, scales: { y: { max: 1, ticks: { stepSize: 1 } } } }
+  }));
+}
+
+function load(data, source) {
+  document.getElementById("source").textContent = source + " · " + data.length + " scans";
+  render(data);
+}
+
+document.getElementById("file").addEventListener("change", async e => {
+  const f = e.target.files[0];
+  if (f) load(JSON.parse(await f.text()), f.name);
+});
+
+fetch("sample-metrics.json")
+  .then(r => r.json())
+  .then(d => load(d, "Sample data"))
+  .catch(() => { document.getElementById("source").textContent = "Open via a local server, or load a metrics.json file above."; });
+</script>
+</body>
+</html>
