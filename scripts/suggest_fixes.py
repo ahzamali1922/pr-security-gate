@@ -35,7 +35,7 @@ GROQ_ENDPOINT = "https://api.groq.com/openai/v1/chat/completions"
 GROQ_MODEL = "llama-3.3-70b-versatile"
 GROK_ENDPOINT = "https://api.x.ai/v1/chat/completions"
 GROK_MODEL = "grok-3-mini"
-CONTEXT_LINES = 3
+CONTEXT_LINES = 8
 
 FALLBACK_HINTS = {
     "unused-import": ("Remove the unused import.", "Unused imports add clutter and can hide real dependencies."),
@@ -91,10 +91,12 @@ def build_prompt(finding, snippet):
         "You are a code-review assistant in a CI security gate.\n"
         f"Tool: {finding['tool']}\nRule: {finding['rule']}\n"
         f"Severity: {finding['severity']}\nMessage: {finding['message']}\n"
-        f"File: {finding['file']} (line {finding['line']})\n\n"
-        f"Code:\n{snippet}\n\n"
-        'Reply with ONLY a JSON object: {"fix": "<the corrected code or a one-sentence '
-        'instruction>", "rationale": "<one sentence>"}.'
+        f"File: {finding['file']}\nFlagged line: {finding['line']}\n\n"
+        f"Code (each line prefixed with its line number):\n{snippet}\n\n"
+        "Fix ONLY the problem reported at the flagged line. Do not rewrite unrelated code.\n"
+        'Reply with ONLY a JSON object: {"fix": "<the corrected line(s) of code only, without '
+        'line numbers or markdown, or one short instruction if code is not appropriate>", '
+        '"rationale": "<one sentence explaining why>"}.'
     )
 
 

@@ -14,6 +14,7 @@ Usage:
 import argparse
 import json
 import os
+import re
 import sys
 import urllib.error
 import urllib.request
@@ -23,6 +24,28 @@ SEVERITY_ORDER = ["critical", "high", "medium", "low"]
 ICONS = {"critical": "🟥", "high": "🟧", "medium": "🟨", "low": "⬜"}
 ANNOTATION_LEVEL = {"critical": "error", "high": "error", "medium": "warning", "low": "notice"}
 MAX_ANNOTATIONS = 50  # GitHub shows at most 50 annotations per step
+
+
+CODE_HINT = re.compile(r"[=(){};]|^\s*(import|from|except|with|const|let|var|def|return|try|if|for)\b")
+LANGS = {".py": "python", ".js": "javascript", ".ts": "typescript"}
+
+
+def clean_fix(fix):
+    """Strip any markdown fences the model added."""
+    fix = fix.strip()
+    fix = re.sub(r"^```[a-zA-Z]*\n?", "", fix)
+    return re.sub(r"\n?```$", "", fix).strip()
+
+
+def format_fix(fix, file):
+    """Render a suggested fix as an indented code block when it looks like code."""
+    fix = clean_fix(fix)
+    is_sentence = "\n" not in fix and re.match(r"^[A-Z][a-z]+ ", fix)
+    if not is_sentence and ("\n" in fix or CODE_HINT.search(fix)):
+        lang = LANGS.get(os.path.splitext(file)[1], "")
+        body = "\n".join("    " + line for line in fix.splitlines())
+        return f"\n    ```{lang}\n{body}\n    ```"
+    return " " + fix
 
 
 def counts(findings):
@@ -54,8 +77,7 @@ def build_comment(findings, fail_on="high", run_url=""):
             lines.append(f"- **`{f['file']}:{f['line']}`** `{f['rule']}` ({f['tool']}) — {f['message']}")
             s = f.get("suggestion")
             if s:
-                fix = s["fix"].replace("\n", "\n    ")
-                lines.append(f"  - 💡 **Suggested fix:** {fix}")
+                lines.append(f"  - 💡 **Suggested fix:**{format_fix(s['fix'], f['file'])}")
                 lines.append(f"  - _Why:_ {s['rationale']}")
         lines.append("")
     lines.append("---")
@@ -72,7 +94,7 @@ def print_annotations(findings):
         text = f"[{f['severity']}] {f['message']}"
         s = f.get("suggestion")
         if s:
-            text += f" | Suggested fix: {s['fix']}"
+            text += f" | Suggested fix: {clean_fix(s['fix'])}"
         text = text.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
         print(f"::{level} file={f['file']},line={f['line']},title={f['rule']}::{text}")
 
