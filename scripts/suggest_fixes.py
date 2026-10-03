@@ -56,6 +56,24 @@ FALLBACK_HINTS = {
 }
 
 
+def load_dotenv(path=".env"):
+    """Load KEY=VALUE lines from a local .env into os.environ (never overrides real env vars)."""
+    try:
+        with open(path, encoding="utf-8") as handle:
+            lines = handle.read().splitlines()
+    except OSError:
+        return
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip().removeprefix("export ").strip()
+        value = value.strip().strip("\"'")
+        if value:
+            os.environ.setdefault(key, value)
+
+
 def read_snippet(path, line, context=CONTEXT_LINES):
     """Return the lines around `line` in `path`, or '' if the file is unreadable."""
     try:
@@ -195,6 +213,7 @@ def main(argv=None):
     parser.add_argument("--input", default="findings.json")
     parser.add_argument("--output", default="enriched-findings.json")
     args = parser.parse_args(argv)
+    load_dotenv()
 
     with open(args.input, encoding="utf-8") as handle:
         findings = json.load(handle)

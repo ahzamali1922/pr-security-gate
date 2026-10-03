@@ -8,4 +8,4 @@ node_modules/
 
 .vscode/
 
-*.log
+*.log!.env.example
