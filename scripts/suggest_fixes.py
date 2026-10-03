@@ -166,6 +166,35 @@ def call_gemini(prompt, token, model, endpoint):
     return "".join(part.get("text", "") for part in parts)
 
 
+GROQ_PREFERRED = [
+    "llama-3.3-70b-versatile",
+    "openai/gpt-oss-120b",
+    "openai/gpt-oss-20b",
+    "llama-3.1-8b-instant",
+]
+NON_CHAT_HINTS = ("whisper", "guard", "tts", "playai", "embed", "orpheus", "distil-whisper")
+
+
+def pick_groq_model(token, endpoint=GROQ_ENDPOINT, default=GROQ_MODEL):
+    """Ask Groq which models this key can use and choose the best chat model."""
+    request = urllib.request.Request(
+        endpoint.replace("/chat/completions", "/models"),
+        headers={"Authorization": f"Bearer {token}", "User-Agent": "pr-security-gate/1.0"},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            available = [m["id"] for m in json.load(response)["data"]]
+    except (urllib.error.URLError, OSError, ValueError, KeyError) as exc:
+        print(f"Could not list Groq models ({exc}); using {default}", file=sys.stderr)
+        return default
+    for model in GROQ_PREFERRED:
+        if model in available:
+            return model
+    chat = [m for m in available if not any(h in m.lower() for h in NON_CHAT_HINTS)]
+    print(f"Groq models available: {', '.join(sorted(available))}")
+    return chat[0] if chat else default
+
+
 def parse_reply(text):
     """Extract {"fix", "rationale"} from a model reply, tolerating code fences."""
     raw = text
@@ -228,7 +257,9 @@ def main(argv=None):
         provider = dict(token=gemini_key, model=GEMINI_MODEL, endpoint=GEMINI_ENDPOINT, llm=call_gemini)
     elif groq_key:
         print("AI provider: Groq")
-        provider = dict(token=groq_key, model=GROQ_MODEL, endpoint=GROQ_ENDPOINT, llm=call_llm)
+        model = os.environ.get("AI_MODEL") or pick_groq_model(groq_key)
+        print(f"Groq model: {model}")
+        provider = dict(token=groq_key, model=model, endpoint=GROQ_ENDPOINT, llm=call_llm)
     elif grok_key:
         print("AI provider: Grok (xAI)")
         provider = dict(token=grok_key, model=GROK_MODEL, endpoint=GROK_ENDPOINT, llm=call_llm)
