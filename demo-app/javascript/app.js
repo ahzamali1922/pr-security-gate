@@ -1,5 +1,3 @@
-const fs = require("fs");
-
 function calculatePrice(price, discount) {
     const finalPrice = price - (price * discount);
     return finalPrice;
