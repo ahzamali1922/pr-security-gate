@@ -5,7 +5,8 @@ If no token is set, or the call fails, a built-in rule-based hint is used so the
 pipeline never breaks because the AI provider is unavailable.
 
 Environment:
-    ANTHROPIC_API_KEY  if set, use the Anthropic API (recommended)
+    GEMINI_API_KEY     if set, use Google Gemini (highest priority)
+    ANTHROPIC_API_KEY  if set (and no Gemini key), use the Anthropic API
     MODELS_TOKEN   personal access token with the Models permission (preferred for GitHub Models)
     GITHUB_TOKEN   token with `models: read` permission (GitHub Models fallback)
     AI_MODEL       model id, default "openai/gpt-4o-mini"
@@ -26,6 +27,8 @@ DEFAULT_ENDPOINT = "https://models.github.ai/inference/chat/completions"
 DEFAULT_MODEL = "openai/gpt-4o-mini"
 ANTHROPIC_ENDPOINT = "https://api.anthropic.com/v1/messages"
 ANTHROPIC_MODEL = "claude-haiku-4-5-20251001"
+GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models"
+GEMINI_MODEL = "gemini-2.5-flash"
 CONTEXT_LINES = 3
 
 FALLBACK_HINTS = {
@@ -124,6 +127,21 @@ def call_anthropic(prompt, token, model, endpoint):
     return "".join(b.get("text", "") for b in payload["content"] if b.get("type") == "text")
 
 
+def call_gemini(prompt, token, model, endpoint):
+    """Google Gemini generateContent API. `endpoint` is the base URL up to /models."""
+    payload = post_json(
+        f"{endpoint}/{model}:generateContent",
+        {"x-goog-api-key": token},
+        {
+            "systemInstruction": {"parts": [{"text": "You answer only with a single JSON object."}]},
+            "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+            "generationConfig": {"temperature": 0.2, "responseMimeType": "application/json"},
+        },
+    )
+    parts = payload["candidates"][0]["content"]["parts"]
+    return "".join(part.get("text", "") for part in parts)
+
+
 def parse_reply(text):
     """Extract {"fix", "rationale"} from a model reply, tolerating code fences."""
     raw = text
@@ -175,26 +193,24 @@ def main(argv=None):
     with open(args.input, encoding="utf-8") as handle:
         findings = json.load(handle)
 
+    # Provider priority: Gemini, Anthropic, then GitHub Models.
+    gemini_key = os.environ.get("GEMINI_API_KEY")
     anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
-    if anthropic_key:
+    if gemini_key:
+        print("AI provider: Gemini")
+        provider = dict(token=gemini_key, model=GEMINI_MODEL, endpoint=GEMINI_ENDPOINT, llm=call_gemini)
+    elif anthropic_key:
         print("AI provider: Anthropic")
-        enriched = enrich(
-            findings,
-            token=anthropic_key,
-            model=os.environ.get("AI_MODEL", ANTHROPIC_MODEL),
-            endpoint=os.environ.get("AI_ENDPOINT", ANTHROPIC_ENDPOINT),
-            max_ai=int(os.environ.get("AI_MAX_FINDINGS", "15")),
-            llm=call_anthropic,
-        )
+        provider = dict(token=anthropic_key, model=ANTHROPIC_MODEL, endpoint=ANTHROPIC_ENDPOINT,
+                        llm=call_anthropic)
     else:
-        print("AI provider: GitHub Models (set ANTHROPIC_API_KEY to use Anthropic)")
-        enriched = enrich(
-            findings,
-            token=os.environ.get("MODELS_TOKEN") or os.environ.get("GITHUB_TOKEN"),
-            model=os.environ.get("AI_MODEL", DEFAULT_MODEL),
-            endpoint=os.environ.get("AI_ENDPOINT", DEFAULT_ENDPOINT),
-            max_ai=int(os.environ.get("AI_MAX_FINDINGS", "15")),
-        )
+        print("AI provider: GitHub Models (set GEMINI_API_KEY or ANTHROPIC_API_KEY to use another)")
+        provider = dict(token=os.environ.get("MODELS_TOKEN") or os.environ.get("GITHUB_TOKEN"),
+                        model=DEFAULT_MODEL, endpoint=DEFAULT_ENDPOINT, llm=call_llm)
+    provider["model"] = os.environ.get("AI_MODEL", provider["model"])
+    provider["endpoint"] = os.environ.get("AI_ENDPOINT", provider["endpoint"])
+
+    enriched = enrich(findings, max_ai=int(os.environ.get("AI_MAX_FINDINGS", "15")), **provider)
     with open(args.output, "w", encoding="utf-8") as handle:
         json.dump(enriched, handle, indent=2)
     ai_count = sum(1 for f in enriched if f["suggestion"]["source"] != "rule-based")

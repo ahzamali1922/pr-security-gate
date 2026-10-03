@@ -96,6 +96,7 @@ jobs:
       - name: AI fix suggestions
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           MODELS_TOKEN: ${{ secrets.MODELS_TOKEN }}
         run: python scripts/suggest_fixes.py --input findings.json --output enriched-findings.json
