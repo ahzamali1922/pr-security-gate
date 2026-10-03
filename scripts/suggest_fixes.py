@@ -6,7 +6,8 @@ pipeline never breaks because the AI provider is unavailable.
 
 Environment:
     GEMINI_API_KEY     if set, use Google Gemini (highest priority)
-    ANTHROPIC_API_KEY  if set (and no Gemini key), use the Anthropic API
+    XAI_API_KEY        if set (and no Gemini key), use Grok (xAI)
+    ANTHROPIC_API_KEY  if set (and none of the above), use the Anthropic API
     MODELS_TOKEN   personal access token with the Models permission (preferred for GitHub Models)
     GITHUB_TOKEN   token with `models: read` permission (GitHub Models fallback)
     AI_MODEL       model id, default "openai/gpt-4o-mini"
@@ -29,6 +30,8 @@ ANTHROPIC_ENDPOINT = "https://api.anthropic.com/v1/messages"
 ANTHROPIC_MODEL = "claude-haiku-4-5-20251001"
 GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models"
 GEMINI_MODEL = "gemini-2.5-flash"
+GROK_ENDPOINT = "https://api.x.ai/v1/chat/completions"
+GROK_MODEL = "grok-3-mini"
 CONTEXT_LINES = 3
 
 FALLBACK_HINTS = {
@@ -193,12 +196,16 @@ def main(argv=None):
     with open(args.input, encoding="utf-8") as handle:
         findings = json.load(handle)
 
-    # Provider priority: Gemini, Anthropic, then GitHub Models.
+    # Provider priority: Gemini, Grok, Anthropic, then GitHub Models.
     gemini_key = os.environ.get("GEMINI_API_KEY")
+    grok_key = os.environ.get("XAI_API_KEY")
     anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
     if gemini_key:
         print("AI provider: Gemini")
         provider = dict(token=gemini_key, model=GEMINI_MODEL, endpoint=GEMINI_ENDPOINT, llm=call_gemini)
+    elif grok_key:
+        print("AI provider: Grok (xAI)")
+        provider = dict(token=grok_key, model=GROK_MODEL, endpoint=GROK_ENDPOINT, llm=call_llm)
     elif anthropic_key:
         print("AI provider: Anthropic")
         provider = dict(token=anthropic_key, model=ANTHROPIC_MODEL, endpoint=ANTHROPIC_ENDPOINT,
