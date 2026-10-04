@@ -1,0 +1,42 @@
+[
+  {
+    "filePath": "/home/runner/work/repo/repo/demo-app/javascript/app.js",
+    "messages": [
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'fs' is assigned a value but never used.",
+        "line": 1,
+        "column": 7
+      },
+      {
+        "ruleId": "no-console",
+        "severity": 1,
+        "message": "Unexpected console statement.",
+        "line": 9,
+        "column": 5
+      },
+      {
+        "ruleId": "no-eval",
+        "severity": 1,
+        "message": "eval can be harmful.",
+        "line": 12,
+        "column": 5
+      },
+      {
+        "ruleId": null,
+        "fatal": true,
+        "severity": 2,
+        "message": "Parsing error: Unexpected token",
+        "line": 20,
+        "column": 1
+      }
+    ],
+    "errorCount": 2,
+    "warningCount": 2
+  },
+  {
+    "filePath": "/home/runner/work/repo/repo/demo-app/javascript/clean.js",
+    "messages": []
+  }
+]

@@ -1,0 +1,46 @@
+[
+  {
+    "type": "warning",
+    "module": "app",
+    "obj": "",
+    "line": 1,
+    "column": 0,
+    "path": "demo-app/python/app.py",
+    "symbol": "unused-import",
+    "message": "Unused import os",
+    "message-id": "W0611"
+  },
+  {
+    "type": "warning",
+    "module": "app",
+    "obj": "read_file",
+    "line": 15,
+    "column": 4,
+    "path": "demo-app/python/app.py",
+    "symbol": "bare-except",
+    "message": "No exception type(s) specified",
+    "message-id": "W0702"
+  },
+  {
+    "type": "convention",
+    "module": "app",
+    "obj": "greet_user",
+    "line": 19,
+    "column": 0,
+    "path": "demo-app/python/app.py",
+    "symbol": "missing-function-docstring",
+    "message": "Missing function or method docstring",
+    "message-id": "C0116"
+  },
+  {
+    "type": "error",
+    "module": "app",
+    "obj": "",
+    "line": 3,
+    "column": 0,
+    "path": "demo-app/python/app.py",
+    "symbol": "import-error",
+    "message": "Unable to import 'nothing'",
+    "message-id": "E0401"
+  }
+]

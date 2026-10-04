@@ -1,0 +1,146 @@
+name: PR Security Scan
+
+on:
+  pull_request:
+    # "synchronize" re-runs the scan on every new commit (Stage 5 re-scan loop)
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write # post/update the findings comment
+  models: read # GitHub Models API for AI fix suggestions
+
+env:
+  FAIL_ON: high # block merge on findings at this severity or worse
+
+jobs:
+  security-scan:
+    # This job name is the required status check: "Security Scan"
+    name: Security Scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ---------- Stage 1: scan ----------
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Pylint
+        run: |
+          python -m pip install --upgrade pip
+          pip install pylint
+
+      # Pylint/ESLint exit non-zero when they find issues, so "|| true" keeps
+      # report generation from failing the job. "Validate reports" catches a
+      # scanner that crashed; the "Enforce gate" step decides pass/fail on findings.
+      - name: Run Pylint
+        run: |
+          pylint --recursive=y --output-format=json demo-app/python > pylint-report.json || true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install ESLint
+        run: |
+          npm init -y
+          npm install --save-dev eslint
+
+      - name: Run ESLint
+        run: |
+          npx eslint demo-app/javascript -f json > eslint-report.json || true
+
+      - name: Validate reports
+        run: |
+          python - <<'EOF'
+          import json, sys
+          ok = True
+          for name in ("pylint-report.json", "eslint-report.json"):
+              try:
+                  with open(name, encoding="utf-8") as f:
+                      data = json.load(f)
+                  if not isinstance(data, list):
+                      raise ValueError("top-level JSON is not a list")
+                  print(f"{name}: valid JSON, {len(data)} entries")
+              except Exception as exc:
+                  print(f"::error::{name} is invalid: {exc}")
+                  ok = False
+          sys.exit(0 if ok else 1)
+          EOF
+
+      - name: Upload scan reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sast-reports
+          path: |
+            pylint-report.json
+            eslint-report.json
+
+      # ---------- Stage 2: parser ----------
+      - name: Run parser unit tests
+        run: python -m unittest discover -s tests
+
+      - name: Normalize findings
+        run: |
+          python scripts/parse_findings.py \
+            --pylint pylint-report.json --eslint eslint-report.json \
+            --output findings.json
+
+      # ---------- Stage 4: AI suggestions ----------
+      - name: AI fix suggestions
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          MODELS_TOKEN: ${{ secrets.MODELS_TOKEN }}
+        run: python scripts/suggest_fixes.py --input findings.json --output enriched-findings.json
+
+      # ---------- Stage 3: report to PR ----------
+      - name: Report to PR
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python scripts/report_pr.py --input enriched-findings.json --fail-on "$FAIL_ON"
+
+      # ---------- Stage 6: metrics ----------
+      - name: Restore metrics history
+        uses: actions/cache/restore@v4
+        with:
+          path: metrics/metrics.json
+          key: metrics-${{ github.run_id }}
+          restore-keys: metrics-
+
+      - name: Record metrics
+        run: |
+          python scripts/metrics.py --input findings.json --history metrics/metrics.json \
+            --pr "${{ github.event.pull_request.number }}" \
+            --sha "${{ github.event.pull_request.head.sha }}" \
+            --run-id "${{ github.run_id }}" --fail-on "$FAIL_ON"
+
+      - name: Save metrics history
+        uses: actions/cache/save@v4
+        with:
+          path: metrics/metrics.json
+          key: metrics-${{ github.run_id }}
+
+      - name: Upload findings and metrics
+        uses: actions/upload-artifact@v4
+        with:
+          name: gate-results
+          path: |
+            findings.json
+            enriched-findings.json
+            metrics/metrics.json
+
+      # ---------- Stage 5: gate ----------
+      # Fails the required check if blocking findings remain; a new commit
+      # re-runs this whole workflow, and the check turns green once it is clean.
+      - name: Enforce gate
+        run: python scripts/gate.py --input findings.json --fail-on "$FAIL_ON"
