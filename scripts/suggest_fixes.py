@@ -94,6 +94,10 @@ def build_prompt(finding, snippet):
         f"File: {finding['file']}\nFlagged line: {finding['line']}\n\n"
         f"Code (each line prefixed with its line number):\n{snippet}\n\n"
         "Fix ONLY the problem reported at the flagged line. Do not rewrite unrelated code.\n"
+        "The fix replaces the flagged line, so keep its indentation and original behaviour. "
+        "Never answer with a comment or by deleting logic; if the line is an unused import or "
+        "variable, answer with an empty string. If one line cannot fix it safely, give a short "
+        "instruction instead of code.\n"
         'Reply with ONLY a JSON object: {"fix": "<the corrected line(s) of code only, without '
         'line numbers or markdown, or one short instruction if code is not appropriate>", '
         '"rationale": "<one sentence explaining why>"}.'
