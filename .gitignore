@@ -1,5 +1,12 @@
 __pycache__/
 *.pyc
+
 node_modules/
+
 .env
-.venv/
+.env.*
+
+.vscode/
+
+*.log
+!.env.example

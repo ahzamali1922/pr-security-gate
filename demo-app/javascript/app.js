@@ -1,9 +1,19 @@
-const unusedVariable = 10;
-
-function calculateTotal(price, tax) {
-    if (price > 0) {
-        return price + tax;
-    }
+function calculatePrice(price, discount) {
+    const finalPrice = price - (price * discount);
+    return finalPrice;
 }
 
-console.log(calculateTotal(100, 18));
+function greetUser(name) {
+    console.log("Hello " + name);
+}
+
+function main() {
+    const price = 100;
+    const discount = 0.2;
+
+    calculatePrice(price, discount);
+
+    greetUser("Developer");
+}
+
+main();

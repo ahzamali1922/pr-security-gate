@@ -1,21 +1,42 @@
-# TrustGate
+# PR Security Gate
 
-TrustGate is a PR security gate for detecting code-quality and security issues before code reaches production.
+A DevSecOps CI/CD security gate that detects bugs and security issues
+during the Pull Request stage instead of after deployment.
 
-The system analyzes pull requests, normalizes findings, provides AI-assisted remediation suggestions, verifies fixes through re-scanning, and controls merge readiness through CI.
+## Core Workflow
 
-## Demo Application
-
-The `demo-app` directory contains intentionally flawed Python and JavaScript code used to demonstrate the TrustGate workflow.
-
-## Planned Workflow
-
+Developer
+    ↓
 Pull Request
-→ Static Analysis
-→ Finding Normalization
-→ Evidence / Trust Analysis
-→ AI Suggestions
-→ Human Review
-→ Re-scan
-→ CI Gate
-→ Merge
+    ↓
+GitHub Actions
+    ↓
+Pylint / ESLint
+    ↓
+Finding Parser
+    ↓
+AI Fix Suggestions
+    ↓
+PR Feedback
+    ↓
+Human Approval
+    ↓
+Re-scan
+    ↓
+Merge
+
+## Tech Stack
+
+- GitHub
+- GitHub Actions
+- Pylint
+- ESLint
+- Python / Node.js
+- LLM API
+- GitHub Checks API
+- SQLite / JSON
+- Chart.js
+
+## Project Status
+
+Stage 0 — Skeleton

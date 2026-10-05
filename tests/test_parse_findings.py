@@ -1,106 +1,69 @@
 import json
+import os
+import sys
 import unittest
 
-from scripts.parse_findings import (
-    parse_pylint,
-    parse_eslint,
-    parse_findings
-)
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(ROOT, "scripts"))
+
+import parse_findings  # noqa: E402
+
+FIXTURES = os.path.join(ROOT, "tests", "fixtures")
 
 
-class TestParser(unittest.TestCase):
+def load(name):
+    with open(os.path.join(FIXTURES, name), encoding="utf-8") as handle:
+        return json.load(handle)
 
-    def test_parse_pylint(self):
-        with open(
-            "tests/fixtures/pylint_sample.json",
-            "r",
-            encoding="utf-8"
-        ) as file:
-            data = json.load(file)
 
-        findings = parse_pylint(data)
-
-        self.assertEqual(len(findings), 2)
-
-        self.assertEqual(
-            findings[0]["file"],
-            "demo-app/python/app.py"
+class ParseFindingsTest(unittest.TestCase):
+    def setUp(self):
+        self.findings = parse_findings.normalize(
+            load("pylint-report.json"), load("eslint-report.json")
         )
 
-        self.assertEqual(
-            findings[0]["line"],
-            10
-        )
+    def test_schema(self):
+        for finding in self.findings:
+            self.assertEqual(
+                set(finding),
+                {"file", "line", "rule", "severity", "message", "tool"},
+            )
 
-        self.assertEqual(
-            findings[0]["rule"],
-            "broad-exception-caught"
-        )
+    def test_total_count(self):
+        self.assertEqual(len(self.findings), 8)
 
-        self.assertEqual(
-            findings[0]["severity"],
-            "MEDIUM"
-        )
+    def test_sorted_most_severe_first(self):
+        order = [parse_findings.SEVERITY_ORDER.index(f["severity"]) for f in self.findings]
+        self.assertEqual(order, sorted(order))
+        self.assertEqual(self.findings[0]["severity"], "critical")
 
-        self.assertEqual(
-            findings[0]["message"],
-            "Catching too general exception Exception"
-        )
+    def test_pylint_severity_mapping(self):
+        by_rule = {f["rule"]: f for f in self.findings}
+        self.assertEqual(by_rule["import-error"]["severity"], "high")
+        self.assertEqual(by_rule["unused-import"]["severity"], "medium")
+        self.assertEqual(by_rule["missing-function-docstring"]["severity"], "low")
 
-    def test_parse_eslint(self):
-        with open(
-            "tests/fixtures/eslint_sample.json",
-            "r",
-            encoding="utf-8"
-        ) as file:
-            data = json.load(file)
+    def test_security_rule_is_bumped(self):
+        by_rule = {f["rule"]: f for f in self.findings}
+        # bare-except is a pylint warning (medium) -> bumped to high
+        self.assertEqual(by_rule["bare-except"]["severity"], "high")
+        # no-eval is an eslint warn (medium) -> bumped to high
+        self.assertEqual(by_rule["no-eval"]["severity"], "high")
 
-        findings = parse_eslint(data)
+    def test_eslint_mapping(self):
+        by_rule = {f["rule"]: f for f in self.findings}
+        self.assertEqual(by_rule["no-unused-vars"]["severity"], "high")
+        self.assertEqual(by_rule["no-console"]["severity"], "medium")
+        self.assertEqual(by_rule["parse-error"]["severity"], "critical")
 
-        self.assertEqual(len(findings), 2)
+    def test_eslint_path_is_normalized(self):
+        eslint = [f for f in self.findings if f["tool"] == "eslint"]
+        for finding in eslint:
+            self.assertNotIn("\\", finding["file"])
 
-        self.assertEqual(
-            findings[0]["file"],
-            "demo-app/javascript/app.js"
-        )
-
-        self.assertEqual(
-            findings[0]["line"],
-            1
-        )
-
-        self.assertEqual(
-            findings[0]["rule"],
-            "no-unused-vars"
-        )
-
-        self.assertEqual(
-            findings[0]["severity"],
-            "HIGH"
-        )
-
-        self.assertEqual(
-            findings[0]["message"],
-            "'fs' is assigned a value but never used."
-        )
-
-    def test_parse_combined_findings(self):
-        findings = parse_findings(
-            "tests/fixtures/pylint_sample.json",
-            "tests/fixtures/eslint_sample.json"
-        )
-
-        self.assertEqual(len(findings), 4)
-
-        self.assertEqual(
-            findings[0]["file"],
-            "demo-app/python/app.py"
-        )
-
-        self.assertEqual(
-            findings[2]["file"],
-            "demo-app/javascript/app.js"
-        )
+    def test_empty_reports(self):
+        self.assertEqual(parse_findings.normalize([], []), [])
+        self.assertEqual(parse_findings.normalize(), [])
 
 
 if __name__ == "__main__":
