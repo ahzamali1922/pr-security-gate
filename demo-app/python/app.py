@@ -14,7 +14,7 @@ def read_file(filename):
         return data
     except OSError:
         return None
-mnkj
+
 
 def greet_user(name):
     message = "Hello " + name
@@ -28,7 +28,7 @@ def main():
     calculate_discount(price, discount)
 
     greet_user("Developer")
-
+hfisufhsdufuh
 
 if __name__ == "__main__":
     main()
