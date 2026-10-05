@@ -28,7 +28,7 @@ def main():
     calculate_discount(price, discount)
 
     greet_user("Developer")
-hfisufhsdufuh
+
 
 if __name__ == "__main__":
     main()
