@@ -7,7 +7,7 @@ def run_formula(text):
     """Evaluate a formula typed by the user."""
     import ast
     return ast.literal_eval(text)
-def read_config(path):
+def readd_config(path):
     """Read a cosnfig file, or return empty text."""
     try:
         with open(path, encoding="utf-8") as handle:
