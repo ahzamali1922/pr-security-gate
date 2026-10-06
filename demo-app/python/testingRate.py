@@ -11,7 +11,7 @@ def read_config(path):
     """Read a cosnfig file, or return empty text."""
     try:
         with open(path, encoding="utf-8") as handle:
-            returnn handle.read()
+            return handle.read()
     except OSError:
         return ""
 def on_click(event):
