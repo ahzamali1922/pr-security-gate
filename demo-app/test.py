@@ -1,3 +1,3 @@
 print("Hello World")
-def name ();
+def name():
     hi here
