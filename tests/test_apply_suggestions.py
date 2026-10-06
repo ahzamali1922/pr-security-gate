@@ -145,6 +145,41 @@ class TypoHintTest(unittest.TestCase):
         self.assertEqual(suggest_fixes.typo_hint(finding("x"), self.SNIPPET), "")
 
 
+class MissingLineTest(unittest.TestCase):
+    SNIPPET = "2: def calculateds_discount(price, discount):\n25:     calculate_discount(price, 1)"
+
+    def make(self):
+        f = finding("x", rule="undefined-variable", line=25)
+        f["message"] = "Undefined variable 'calculate_discount'"
+        f.pop("suggestion")
+        return f
+
+    def test_definition_fix_without_line_is_moved_to_the_definition(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "app.py")
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write("\ndef calculateds_discount(price, discount):\n    return price\n\ncalculate_discount(1, 2)\n")
+            f = self.make()
+            f["file"], f["line"] = path, 5
+            reply = '{"fix": "def calculate_discount(price, discount):", "rationale": "typo"}'
+            out = suggest_fixes.enrich([f], token="t", llm=lambda *_: reply)
+        self.assertEqual(out[0]["suggestion"]["line"], 2)
+        self.assertEqual(out[0]["suggestion"]["fix"], "def calculate_discount(price, discount):")
+
+    def test_candidate_found(self):
+        candidate = suggest_fixes.typo_candidate(self.make(), self.SNIPPET)
+        self.assertEqual(candidate, ("calculate_discount", "calculateds_discount", 2))
+        self.assertTrue(suggest_fixes.fix_targets_definition(
+            "def calculate_discount(price, discount):", candidate))
+
+    def test_other_fix_is_not_moved(self):
+        candidate = ("calculate_discount", "calculateds_discount", 2)
+        self.assertFalse(suggest_fixes.fix_targets_definition("calculate_discount(price, 1)", candidate))
+        self.assertFalse(suggest_fixes.fix_targets_definition("def other():", candidate))
+        self.assertFalse(suggest_fixes.fix_targets_definition("def calculate_discount():", None))
+
+
 class ReplyLineTest(unittest.TestCase):
     def test_reply_line(self):
         self.assertEqual(suggest_fixes.reply_line('{"line": 3, "fix": "x", "rationale": "y"}'), 3)

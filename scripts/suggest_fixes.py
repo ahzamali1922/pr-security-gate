@@ -91,11 +91,11 @@ def read_snippet(path, line, context=CONTEXT_LINES):
     return "\n".join(f"{n + 1}: {lines[n]}" for n in range(start, end))
 
 
-def typo_hint(finding, snippet):
-    """For an undefined name, point the model at a similarly named definition (a likely typo)."""
+def typo_candidate(finding, snippet):
+    """(undefined name, similarly named definition, its line) for a likely typo, else None."""
     match = re.search(r"Undefined variable '(\w+)'", finding["message"])
     if not match:
-        return ""
+        return None
     name = match.group(1)
     defined = {}
     for row in snippet.splitlines():
@@ -103,11 +103,23 @@ def typo_hint(finding, snippet):
         if found:
             defined[found.group(2)] = int(found.group(1))
     close = difflib.get_close_matches(name, list(defined), n=1, cutoff=0.8)
-    if not close:
+    return (name, close[0], defined[close[0]]) if close else None
+
+
+def typo_hint(finding, snippet):
+    """For an undefined name, point the model at a similarly named definition (a likely typo)."""
+    candidate = typo_candidate(finding, snippet)
+    if not candidate:
         return ""
-    return (f"Hint: '{name}' is probably a typo of '{close[0]}', defined at line {defined[close[0]]}. "
-            f"If so, fix the definition: set \"line\" to {defined[close[0]]} and rename it to '{name}' "
+    name, close, line = candidate
+    return (f"Hint: '{name}' is probably a typo of '{close}', defined at line {line}. "
+            f"If so, fix the definition: set \"line\" to {line} and rename it to '{name}' "
             "(keep the rest of that line unchanged).\n")
+
+
+def fix_targets_definition(fix, candidate):
+    """True if `fix` is the corrected definition line (the model forgot to say which line)."""
+    return bool(candidate) and re.match(rf"\s*(?:def|class)\s+{re.escape(candidate[0])}\b", fix) is not None
 
 
 def build_prompt(finding, snippet, hint=""):
@@ -278,6 +290,8 @@ def enrich(findings, token=None, model=DEFAULT_MODEL, endpoint=DEFAULT_ENDPOINT,
                 fix, why = parse_reply(reply)
                 suggestion = {"fix": fix, "rationale": why, "source": model}
                 target = reply_line(reply)
+                if not target and fix_targets_definition(fix, typo_candidate(finding, snippet)):
+                    target = typo_candidate(finding, snippet)[2]
                 if target and target != finding["line"]:
                     suggestion["line"] = target
             except (urllib.error.URLError, OSError, KeyError, ValueError, IndexError) as exc:
