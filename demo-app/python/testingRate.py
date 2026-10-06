@@ -17,7 +17,7 @@ def read_config(path):
 def on_click(event):
     """Button callback; the UI framework always passes the event."""
     print("clicked")
-def saafdce_run(task):
+def safdce_run(task):
     """Last-resort guard: a failing task must never crash the app."""
     try:
         task()
