@@ -39,6 +39,16 @@ def clean_fix(fix):
     return re.sub(r"\n?```$", "", fix).strip()
 
 
+def verification_note(suggestion):
+    """One line telling the reviewer whether a re-scan with this fix was clean ('' if unchecked)."""
+    check = (suggestion or {}).get("verification") or {}
+    if check.get("status") == "verified":
+        return "✅ _Lint-verified: a re-scan with this fix no longer reports the finding._"
+    if check.get("status") == "failed":
+        return f"⚠️ _Not verified: {check.get('reason', 'a re-scan still reports a problem')}. Fix it by hand._"
+    return ""
+
+
 def format_fix(fix, file):
     """Render a suggested fix as an indented code block when it looks like code."""
     fix = clean_fix(fix)
@@ -81,6 +91,9 @@ def build_comment(findings, fail_on="high", run_url=""):
             if s:
                 lines.append(f"  - 💡 **Suggested fix:**{format_fix(s['fix'], f['file'])}")
                 lines.append(f"  - _Why:_ {s['rationale']}")
+                note = verification_note(s)
+                if note:
+                    lines.append(f"  - {note}")
         lines.append("")
     lines.append("---")
     footer = "A human reviewer must approve before merge; pushing a new commit triggers an automatic re-scan."
@@ -114,8 +127,12 @@ def api(method, url, token, payload=None):
             "Content-Type": "application/json",
         },
     )
-    with urllib.request.urlopen(request, timeout=30) as response:
-        return json.load(response)
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            return json.load(response)
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")[:400]
+        raise OSError(f"HTTP {exc.code} on {method} {url}: {detail}") from exc
 
 
 def post_comment(body, repo, pr_number, token, api_url="https://api.github.com"):
@@ -178,7 +195,10 @@ def suggestion_text(finding, original_line):
     is_sentence = "\n" not in fix and re.match(r"^[A-Z][a-z]+ ", fix)
     if is_sentence or not CODE_HINT.search(fix):
         return None
-    if statement_kind(original_line) not in {statement_kind(l) for l in lines}:
+    # A syntax error means the original line is not valid code (for example `returnn x`), so its
+    # statement kind is meaningless; the verification step checks those fixes instead.
+    if finding["rule"] != "syntax-error" and \
+            statement_kind(original_line) not in {statement_kind(l) for l in lines}:
         return None  # e.g. an assignment replaced by a return: the fix belongs to another line
     indent = original_line[:len(original_line) - len(original_line.lstrip())]
     if not lines[0].startswith((" ", "\t")):
@@ -200,11 +220,13 @@ def encode_meta(finding, text):
     return "<!-- pr-gate-meta: " + base64.urlsafe_b64encode(raw).decode("ascii") + " -->"
 
 
-def suggestion_body(finding, text, line=None):
+def suggestion_body(finding, text, line=None, original=""):
     line = line or finding["line"]
+    # the marker also covers the line being replaced: the same fix text for a NEW bug on the
+    # same line (a different original line) is a new suggestion, not a duplicate
+    digest = hashlib.sha1((original.rstrip() + "|" + text).encode("utf-8")).hexdigest()[:8]
     marker = "<!-- pr-security-gate:{}:{}:{}:{} -->".format(
-        finding["file"], line, finding["rule"],
-        hashlib.sha1(text.encode("utf-8")).hexdigest()[:8])
+        finding["file"], line, finding["rule"], digest)
     block = "```suggestion\n" + (text + "\n" if text else "") + "```"
     s = finding["suggestion"]
     where = "" if line == finding["line"] else f" (flagged at line {finding['line']}, the cause is here)"
@@ -213,7 +235,7 @@ def suggestion_body(finding, text, line=None):
         f"🤖 **{finding['rule']}** ({finding['severity']}) — {finding['message']}{where}",
         "",
         f"_Why:_ {s['rationale']}",
-        "",
+        *(["", verification_note(s), ""] if verification_note(s) else [""]),
         block,
         "",
         "_Review the change, then click **Apply suggestion**. The scan re-runs on the new "
@@ -232,25 +254,43 @@ def read_line(path, line):
         return None
 
 
-def build_suggestion_comments(findings, diff_lines, existing_text="", read=read_line):
+def build_suggestion_comments(findings, diff_lines, existing_text="", read=read_line, skipped=None):
     """Review comments for findings whose fix can be applied with one click.
 
     Only lines that are inside the PR diff, still match the scanned file, and were not
-    already suggested on an earlier run are included.
+    already suggested on an earlier run are included. If `skipped` is a list, a
+    (finding, reason) pair is appended for every finding that gets no one-click suggestion.
     """
     comments, used = [], set()
+
+    def skip(finding, reason):
+        if skipped is not None:
+            skipped.append((finding, reason))
+
     for f in findings:
         # the model may point at a different line than the flagged one (e.g. a misspelled def)
         line = (f.get("suggestion") or {}).get("line") or f["line"]
         original = diff_lines.get(f["file"], {}).get(line)
         current = read(f["file"], line)
-        if original is None or current is None or original.rstrip() != current.rstrip():
+        if original is None:
+            skip(f, f"line {line} is not part of the PR diff")
+            continue
+        if current is None or original.rstrip() != current.rstrip():
+            skip(f, f"line {line} differs between the PR diff and the scanned file")
             continue
         text = suggestion_text(f, original)
-        if text is None or (f["file"], line) in used:
+        if text is None:
+            skip(f, "the AI fix is not a safe one-line code replacement")
             continue
-        body = suggestion_body(f, text, line)
+        if (f["file"], line) in used:
+            skip(f, f"another suggestion already targets line {line}")
+            continue
+        if ((f.get("suggestion") or {}).get("verification") or {}).get("status") == "failed":
+            skip(f, "a re-scan with this fix still fails")
+            continue  # a re-scan with this fix still fails: no one-click button for it
+        body = suggestion_body(f, text, line, original)
         if body.splitlines()[0] in existing_text:
+            skip(f, "the same suggestion is already open on the PR")
             continue
         used.add((f["file"], line))
         comments.append({"path": f["file"], "line": line, "side": "RIGHT", "body": body})
@@ -285,7 +325,12 @@ def post_suggestions(findings, repo, pr_number, sha, token, api_url="https://api
     diff_lines = pr_diff_lines(repo, pr_number, token, api_url)
     existing = api("GET", f"{api_url}/repos/{repo}/pulls/{pr_number}/comments?per_page=100", token)
     existing_text = active_comment_text(existing)
-    comments = build_suggestion_comments(findings, diff_lines, existing_text)
+    skipped = []
+    comments = build_suggestion_comments(findings, diff_lines, existing_text, skipped=skipped)
+    for finding, reason in skipped:
+        if (finding.get("suggestion") or {}).get("source") != "rule-based":
+            print(f"No inline suggestion for {finding['file']}:{finding['line']} "
+                  f"({finding['rule']}): {reason}")
     if not comments:
         return 0
     api("POST", f"{api_url}/repos/{repo}/pulls/{pr_number}/reviews", token, {

@@ -41,6 +41,7 @@
     <div class="card tile"><b id="t-ttf">–</b><span>Avg time-to-fix</span></div>
     <div class="card tile"><b id="t-accept">–</b><span>Fix acceptance rate</span></div>
     <div class="card tile"><b id="t-fp">–</b><span>False-positive rate</span></div>
+    <div class="card tile"><b id="t-blocked">–</b><span>Bad AI fixes blocked</span></div>
   </div>
 
   <div class="grid">
@@ -79,6 +80,13 @@ function render(data) {
   const sum = k => fb.reduce((s, f) => s + (f[k] || 0), 0);
   const posted = sum("posted"), accepted = sum("accepted"), wrong = sum("false_positive");
   const pct = n => posted ? Math.round(100 * n / posted) + "%" : "–";
+  // verification counts are per scan; use the latest scan of each PR that has them
+  const checks = {};
+  data.forEach(r => { if (r.verification) checks[r.pr] = r.verification; });
+  const checked = Object.values(checks);
+  document.getElementById("t-blocked").textContent = checked.length
+    ? checked.reduce((s, v) => s + (v.failed || 0), 0) + " of " + checked.reduce((s, v) => s + (v.checked || 0), 0)
+    : "–";
   document.getElementById("t-accept").textContent = pct(accepted);
   document.getElementById("t-fp").textContent = pct(wrong);
   charts.push(new Chart(document.getElementById("c-fb"), {

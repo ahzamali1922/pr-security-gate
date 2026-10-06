@@ -58,6 +58,15 @@ class SuggestionTextTest(unittest.TestCase):
         f = finding("return sum(prices) + tax", rule="unused-variable")
         self.assertIsNone(report_pr.suggestion_text(f, "    tax = 5"))
 
+    def test_syntax_error_typo_fix_is_allowed(self):
+        f = finding("return handle.read()", rule="syntax-error")
+        text = report_pr.suggestion_text(f, "            returnn handle.read()")
+        self.assertEqual(text, "            return handle.read()")
+
+    def test_kind_guard_still_applies_to_other_rules(self):
+        f = finding("return handle.read()", rule="bare-except")
+        self.assertIsNone(report_pr.suggestion_text(f, "            returnn handle.read()"))
+
     def test_allows_multiline_eval_fix_keeping_the_return(self):
         f = finding("    import ast\n    return ast.literal_eval(text)", rule="eval-used")
         text = report_pr.suggestion_text(f, "    return eval(text)")
@@ -111,6 +120,64 @@ class BuildCommentsTest(unittest.TestCase):
         out = report_pr.build_suggestion_comments(
             [finding("", rule="unused-import", line=1)], diff, read=lambda *_: "import os")
         self.assertIn("```suggestion\n```", out[0]["body"])
+
+
+class RepeatedBugTest(unittest.TestCase):
+    """The same fix text for a NEW bug on the same line must be posted again."""
+
+    def build(self, original, existing_text=""):
+        f = finding("return sum(prices) + tax", rule="undefined-variable", line=5)
+        return report_pr.build_suggestion_comments(
+            [f], {"a.py": {5: original}}, existing_text, read=lambda *_: original)
+
+    def test_same_fix_new_original_line_is_not_a_duplicate(self):
+        first = self.build("    return sum(prices) + taxx")
+        again = self.build("    return suum(prices) + tax", existing_text=first[0]["body"])
+        self.assertEqual(len(first), 1)
+        self.assertEqual(len(again), 1)
+
+    def test_same_original_line_is_still_a_duplicate(self):
+        first = self.build("    return suum(prices) + tax")
+        again = self.build("    return suum(prices) + tax", existing_text=first[0]["body"])
+        self.assertEqual(again, [])
+
+
+class SkipReasonTest(unittest.TestCase):
+    def reasons(self, f, diff, read, existing=""):
+        skipped = []
+        out = report_pr.build_suggestion_comments([f], diff, existing, read=read, skipped=skipped)
+        return out, [reason for _, reason in skipped]
+
+    def test_outside_the_diff(self):
+        _, why = self.reasons(finding("except OSError:"), {"a.py": {}}, lambda *_: "except:")
+        self.assertIn("not part of the PR diff", why[0])
+
+    def test_unsafe_fix(self):
+        _, why = self.reasons(finding("# removed"), {"a.py": {4: "except:"}}, lambda *_: "except:")
+        self.assertIn("not a safe one-line", why[0])
+
+    def test_failed_verification(self):
+        f = finding("except OSError:")
+        f["suggestion"]["verification"] = {"status": "failed", "reason": "x"}
+        _, why = self.reasons(f, {"a.py": {4: "except:"}}, lambda *_: "except:")
+        self.assertIn("still fails", why[0])
+
+    def test_no_reason_recorded_when_a_comment_is_built(self):
+        out, why = self.reasons(finding("except OSError:"), {"a.py": {4: "except:"}}, lambda *_: "except:")
+        self.assertEqual((len(out), why), (1, []))
+
+
+class ApiErrorTest(unittest.TestCase):
+    def test_http_error_keeps_githubs_message(self):
+        import io
+        import urllib.error
+        from unittest import mock
+        error = urllib.error.HTTPError("u", 422, "Unprocessable", {}, io.BytesIO(b'{"message":"line must be part of the diff"}'))
+        with mock.patch.object(report_pr.urllib.request, "urlopen", side_effect=error):
+            with self.assertRaises(OSError) as ctx:
+                report_pr.api("POST", "https://x/y", "t", {"a": 1})
+        self.assertIn("422", str(ctx.exception))
+        self.assertIn("line must be part of the diff", str(ctx.exception))
 
 
 class OutdatedCommentTest(unittest.TestCase):

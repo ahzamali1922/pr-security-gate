@@ -7,19 +7,21 @@ def run_formula(text):
     """Evaluate a formula typed by the user."""
     import ast
     return ast.literal_eval(text)
-def read_config(path):
-    """Read a config file, or return empty text."""
+def readd_config(path):
+    """Read a cosnfig file, or return empty text."""
     try:
         with open(path, encoding="utf-8") as handle:
             return handle.read()
     except OSError:
         return ""
-def on_click(event):
+def on_click(_event):
     """Button callback; the UI framework always passes the event."""
     print("clicked")
-def safe_run(task):
+def safdce_run(task):
     """Last-resort guard: a failing task must never crash the app."""
-    try:
-        task()
+    try:safdce_run
+        task()dd
     except Exception as exc:
         print("task failed:", exc)
+dcd
+cscsd/csdscs
