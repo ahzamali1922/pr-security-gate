@@ -5,7 +5,8 @@ If no token is set, or the call fails, a built-in rule-based hint is used so the
 pipeline never breaks because the AI provider is unavailable.
 
 Environment:
-    GEMINI_API_KEY     if set, use Google Gemini (highest priority)
+    COPILOT_GITHUB_TOKEN  if set (and the `copilot` CLI is installed), use GitHub Copilot CLI (highest priority)
+    GEMINI_API_KEY     if set, use Google Gemini
     GROQ_API_KEY       if set (and no Gemini key), use Groq
     XAI_API_KEY        if set (and no Gemini key), use Grok (xAI)
     ANTHROPIC_API_KEY  if set (and none of the above), use the Anthropic API
@@ -23,6 +24,8 @@ import difflib
 import json
 import os
 import re
+import shutil
+import subprocess
 import sys
 import urllib.error
 import urllib.request
@@ -38,6 +41,7 @@ GROQ_MODEL = "llama-3.3-70b-versatile"
 GROK_ENDPOINT = "https://api.x.ai/v1/chat/completions"
 GROK_MODEL = "grok-3-mini"
 CONTEXT_LINES = 8
+COPILOT_MODEL = "copilot"  # sentinel: let the Copilot CLI pick its default model
 WHOLE_FILE_LINES = 150  # send the whole file when it is small, so the model can fix the real cause
 
 FALLBACK_HINTS = {
@@ -185,6 +189,26 @@ def call_llm(prompt, token, model, endpoint):
     return payload["choices"][0]["message"].get("content") or ""
 
 
+def call_copilot(prompt, token, model, endpoint):
+    """GitHub Copilot CLI in non-interactive mode (`copilot -p`, `-s` prints only the reply).
+
+    No tool permissions are granted, so Copilot can only answer the prompt, not run commands.
+    """
+    command = [shutil.which("copilot") or "copilot", "-p", prompt, "-s"]
+    if model and model != COPILOT_MODEL:
+        command += ["--model", model]
+    try:
+        done = subprocess.run(
+            command, capture_output=True, text=True, encoding="utf-8", stdin=subprocess.DEVNULL,
+            env={**os.environ, "COPILOT_GITHUB_TOKEN": token},
+            timeout=int(os.environ.get("COPILOT_TIMEOUT", "120")), check=False)
+    except subprocess.SubprocessError as exc:  # timeout etc.; enrich() falls back on OSError
+        raise OSError(f"copilot CLI failed: {exc}") from exc
+    if done.returncode != 0:
+        raise OSError(f"copilot CLI exited {done.returncode}: {(done.stderr or done.stdout)[:300]}")
+    return done.stdout
+
+
 def call_anthropic(prompt, token, model, endpoint):
     """Anthropic Messages API."""
     payload = post_json(
@@ -316,12 +340,19 @@ def main(argv=None):
     with open(args.input, encoding="utf-8") as handle:
         findings = json.load(handle)
 
-    # Provider priority: Gemini, Groq, Grok (xAI), Anthropic, then GitHub Models.
+    # Provider priority: Copilot CLI, Gemini, Groq, Grok (xAI), Anthropic, then GitHub Models.
+    copilot_key = os.environ.get("COPILOT_GITHUB_TOKEN")
+    if copilot_key and not shutil.which("copilot"):
+        print("COPILOT_GITHUB_TOKEN is set but the `copilot` CLI is not installed; using another provider")
+        copilot_key = None
     gemini_key = os.environ.get("GEMINI_API_KEY")
     groq_key = os.environ.get("GROQ_API_KEY")
     grok_key = os.environ.get("XAI_API_KEY")
     anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
-    if gemini_key:
+    if copilot_key:
+        print("AI provider: GitHub Copilot CLI")
+        provider = dict(token=copilot_key, model=COPILOT_MODEL, endpoint="", llm=call_copilot)
+    elif gemini_key:
         print("AI provider: Gemini")
         provider = dict(token=gemini_key, model=GEMINI_MODEL, endpoint=GEMINI_ENDPOINT, llm=call_gemini)
     elif groq_key:

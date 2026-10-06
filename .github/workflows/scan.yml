@@ -44,12 +44,17 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22" # GitHub Copilot CLI needs Node 22+
 
       - name: Install ESLint
         run: |
           npm init -y
           npm install --save-dev eslint
+
+      # Optional: if the install fails, the AI step falls back to the other providers.
+      - name: Install Copilot CLI
+        continue-on-error: true
+        run: npm install -g @github/copilot
 
       - name: Run ESLint
         run: |
@@ -96,6 +101,7 @@ jobs:
       - name: AI fix suggestions
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
