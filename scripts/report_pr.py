@@ -191,7 +191,10 @@ def suggestion_text(finding, original_line):
     is_sentence = "\n" not in fix and re.match(r"^[A-Z][a-z]+ ", fix)
     if is_sentence or not CODE_HINT.search(fix):
         return None
-    if statement_kind(original_line) not in {statement_kind(l) for l in lines}:
+    # A syntax error means the original line is not valid code (for example `returnn x`), so its
+    # statement kind is meaningless; the verification step checks those fixes instead.
+    if finding["rule"] != "syntax-error" and \
+            statement_kind(original_line) not in {statement_kind(l) for l in lines}:
         return None  # e.g. an assignment replaced by a return: the fix belongs to another line
     indent = original_line[:len(original_line) - len(original_line.lstrip())]
     if not lines[0].startswith((" ", "\t")):

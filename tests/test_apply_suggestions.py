@@ -58,6 +58,15 @@ class SuggestionTextTest(unittest.TestCase):
         f = finding("return sum(prices) + tax", rule="unused-variable")
         self.assertIsNone(report_pr.suggestion_text(f, "    tax = 5"))
 
+    def test_syntax_error_typo_fix_is_allowed(self):
+        f = finding("return handle.read()", rule="syntax-error")
+        text = report_pr.suggestion_text(f, "            returnn handle.read()")
+        self.assertEqual(text, "            return handle.read()")
+
+    def test_kind_guard_still_applies_to_other_rules(self):
+        f = finding("return handle.read()", rule="bare-except")
+        self.assertIsNone(report_pr.suggestion_text(f, "            returnn handle.read()"))
+
     def test_allows_multiline_eval_fix_keeping_the_return(self):
         f = finding("    import ast\n    return ast.literal_eval(text)", rule="eval-used")
         text = report_pr.suggestion_text(f, "    return eval(text)")

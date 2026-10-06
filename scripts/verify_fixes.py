@@ -93,10 +93,20 @@ def verify(finding, line, text, content, lint=lint_file, fail_on="high", baselin
         baselines[path] = lint(path, content)
     before = count(baselines[path])
     key = (finding["rule"], finding["message"])
-    if before[key] == 0:
+    is_syntax_error = finding["rule"] == "syntax-error"
+    reproduced = (any(f["rule"] == "syntax-error" for f in baselines[path])
+                  if is_syntax_error else before[key] > 0)
+    if not reproduced:
         return {"status": "skipped", "reason": "this finding could not be reproduced in a re-scan"}
 
     after_findings = lint(path, apply_fix(content, line, text))
+    if is_syntax_error:
+        # A syntax error hides every other finding in the file, so whatever shows up once the
+        # file parses again was already there. The only question is whether it parses now.
+        if any(f["rule"] == "syntax-error" for f in after_findings):
+            return {"status": "failed", "reason": "the file still does not parse with this fix"}
+        return {"status": "verified", "reason": "the file parses again with this fix",
+                "new_findings": len(after_findings)}
     after = count(after_findings)
     if after[key] >= before[key]:
         return {"status": "failed", "reason": "the finding is still reported with this fix"}

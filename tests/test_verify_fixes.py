@@ -83,6 +83,31 @@ class VerifyTest(unittest.TestCase):
         self.assertEqual(calls.count(CONTENT), 1)
 
 
+class SyntaxErrorVerifyTest(unittest.TestCase):
+    SYNTAX = f("syntax-error", "Parsing failed: 'invalid syntax (a, line 2)'")
+    BROKEN = "x = 1\nreturnn x\n"
+
+    def lint_with(self, after):
+        return lambda path, content: [self.SYNTAX] if content == self.BROKEN else after
+
+    def test_verified_when_the_file_parses_again_even_if_hidden_findings_appear(self):
+        hidden = [f("undefined-variable", "Undefined variable 'suum'"),
+                  f("unused-import", "Unused import os", severity="medium")]
+        out = verify_fixes.verify(self.SYNTAX, 2, "return x", self.BROKEN, self.lint_with(hidden))
+        self.assertEqual((out["status"], out["new_findings"]), ("verified", 2))
+
+    def test_failed_when_the_file_still_does_not_parse(self):
+        still = [f("syntax-error", "Parsing failed: 'invalid syntax (a, line 2)'")]
+        out = verify_fixes.verify(self.SYNTAX, 2, "return  x y", self.BROKEN, self.lint_with(still))
+        self.assertEqual(out["status"], "failed")
+
+    def test_message_text_does_not_have_to_match_exactly(self):
+        other_message = dict(self.SYNTAX, message="Parsing failed: 'invalid syntax (<stdin>, line 2)'")
+        lint = lambda path, content: [other_message] if content == self.BROKEN else []  # noqa: E731
+        out = verify_fixes.verify(self.SYNTAX, 2, "return x", self.BROKEN, lint)
+        self.assertEqual(out["status"], "verified")
+
+
 class VerifyAllTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
