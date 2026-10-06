@@ -39,6 +39,16 @@ def clean_fix(fix):
     return re.sub(r"\n?```$", "", fix).strip()
 
 
+def verification_note(suggestion):
+    """One line telling the reviewer whether a re-scan with this fix was clean ('' if unchecked)."""
+    check = (suggestion or {}).get("verification") or {}
+    if check.get("status") == "verified":
+        return "✅ _Lint-verified: a re-scan with this fix no longer reports the finding._"
+    if check.get("status") == "failed":
+        return f"⚠️ _Not verified: {check.get('reason', 'a re-scan still reports a problem')}. Fix it by hand._"
+    return ""
+
+
 def format_fix(fix, file):
     """Render a suggested fix as an indented code block when it looks like code."""
     fix = clean_fix(fix)
@@ -81,6 +91,9 @@ def build_comment(findings, fail_on="high", run_url=""):
             if s:
                 lines.append(f"  - 💡 **Suggested fix:**{format_fix(s['fix'], f['file'])}")
                 lines.append(f"  - _Why:_ {s['rationale']}")
+                note = verification_note(s)
+                if note:
+                    lines.append(f"  - {note}")
         lines.append("")
     lines.append("---")
     footer = "A human reviewer must approve before merge; pushing a new commit triggers an automatic re-scan."
@@ -213,7 +226,7 @@ def suggestion_body(finding, text, line=None):
         f"🤖 **{finding['rule']}** ({finding['severity']}) — {finding['message']}{where}",
         "",
         f"_Why:_ {s['rationale']}",
-        "",
+        *(["", verification_note(s), ""] if verification_note(s) else [""]),
         block,
         "",
         "_Review the change, then click **Apply suggestion**. The scan re-runs on the new "
@@ -249,6 +262,8 @@ def build_suggestion_comments(findings, diff_lines, existing_text="", read=read_
         text = suggestion_text(f, original)
         if text is None or (f["file"], line) in used:
             continue
+        if ((f.get("suggestion") or {}).get("verification") or {}).get("status") == "failed":
+            continue  # a re-scan with this fix still fails: no one-click button for it
         body = suggestion_body(f, text, line)
         if body.splitlines()[0] in existing_text:
             continue
