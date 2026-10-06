@@ -1,4 +1,3 @@
-import math
 dc
 
 def calculateds_discount(price, discount):
