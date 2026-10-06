@@ -11,7 +11,7 @@ def read_config(path):
     try:
         with open(path, encoding="utf-8") as handle:
             return handle.read()
-    except Exception:
+    except OSError:
         return ""
 def on_click(event):
     """Button callback; the UI framework always passes the event."""
