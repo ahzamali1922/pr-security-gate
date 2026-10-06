@@ -107,8 +107,7 @@ def typo_hint(finding, snippet):
         return ""
     return (f"Hint: '{name}' is probably a typo of '{close[0]}', defined at line {defined[close[0]]}. "
             f"If so, fix the definition: set \"line\" to {defined[close[0]]} and rename it to '{name}' "
-            "(keep the rest of that line unchanged).
-")
+            "(keep the rest of that line unchanged).\n")
 
 
 def build_prompt(finding, snippet, hint=""):
@@ -117,7 +116,7 @@ def build_prompt(finding, snippet, hint=""):
         f"Tool: {finding['tool']}\nRule: {finding['rule']}\n"
         f"Severity: {finding['severity']}\nMessage: {finding['message']}\n"
         f"File: {finding['file']}\nFlagged line: {finding['line']}\n\n"
-        f"Code (each line prefixed with its line number):\n{snippet}\n\n"
+        f"Code (each line prefixed with its line number):\n{snippet}\n\n{hint}"
         "Fix ONLY the problem reported. Do not rewrite unrelated code.\n"
         "The fix replaces ONE line, so keep its indentation and original behaviour. By default that "
         "is the flagged line. If the real cause is on another line (for example a misspelled "
