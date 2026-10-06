@@ -11,7 +11,7 @@ def read_fsddsile(filename):
     except OSError:
         return None
 
-def greet_suser(name):
+def greet_user(name):
     message = "Hello " + name
     print(message)
 
