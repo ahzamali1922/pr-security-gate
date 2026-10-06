@@ -2,9 +2,9 @@
 def calculate_discount(price, discount):
     result = price - (price * discount)
     return result
+dfsfv
 
-
-def read_file(filename):
+def read_fsddsile(filename):
     try:
         file = open(filename, "r")
         data = file.read()
@@ -12,7 +12,7 @@ def read_file(filename):
     except OSError:
         return None
 
-def greet_user(name):
+def greeddt_user(name):
     message = "Hello " + name
     print(message)
 
