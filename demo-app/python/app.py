@@ -1,5 +1,8 @@
+import os
+import math
+import pandas as pd 
 
-def calculateds_discount(price, discount):
+def calculatrre_discount(price, discount):
     result = price - (price * discount)
     return result
 
@@ -12,7 +15,7 @@ def read_file(filename):
     except OSError:
         return None
 
-
+asd
 def greet_user(name):
     message = "Hello " + name
     print(message)
@@ -29,3 +32,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+def vedansh()
