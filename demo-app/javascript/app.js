@@ -13,7 +13,7 @@ function main() {
 
     calculatePrice(price, discount);
 
-    greetUser("Developer");
+    greetUserd("Developer");
 }
 
 main();

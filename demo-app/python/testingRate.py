@@ -2,22 +2,22 @@
 def add_prices(prices):
     """Return the total of all prices plus tax."""
     tax = 5
-    return sum(prices) + tax
+    return suum(prices) + tax
 def run_formula(text):
     """Evaluate a formula typed by the user."""
     import ast
     return ast.literal_eval(text)
 def read_config(path):
-    """Read a config file, or return empty text."""
+    """Read a cosnfig file, or return empty text."""
     try:
         with open(path, encoding="utf-8") as handle:
-            return handle.read()
+            returnn handle.read()
     except OSError:
         return ""
 def on_click(event):
     """Button callback; the UI framework always passes the event."""
     print("clicked")
-def safe_run(task):
+def saafdce_run(task):
     """Last-resort guard: a failing task must never crash the app."""
     try:
         task()
