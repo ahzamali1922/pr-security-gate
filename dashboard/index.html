@@ -39,6 +39,8 @@
     <div class="card tile"><b id="t-issues">–</b><span>Issues found</span></div>
     <div class="card tile"><b id="t-rescan">–</b><span>Gate pass rate</span></div>
     <div class="card tile"><b id="t-ttf">–</b><span>Avg time-to-fix</span></div>
+    <div class="card tile"><b id="t-accept">–</b><span>Fix acceptance rate</span></div>
+    <div class="card tile"><b id="t-fp">–</b><span>False-positive rate</span></div>
   </div>
 
   <div class="grid">
@@ -46,6 +48,7 @@
     <div class="card"><h2>Issues per scan (trend)</h2><canvas id="c-trend"></canvas></div>
     <div class="card"><h2>Time-to-fix per PR (minutes)</h2><canvas id="c-ttf"></canvas></div>
     <div class="card"><h2>Gate result per scan</h2><canvas id="c-pass"></canvas></div>
+    <div class="card"><h2>AI suggestion outcomes (latest scan per PR)</h2><canvas id="c-fb"></canvas></div>
   </div>
 </main>
 
@@ -68,6 +71,23 @@ function render(data) {
   document.getElementById("t-issues").textContent = data.reduce((s, r) => s + r.total, 0);
   document.getElementById("t-rescan").textContent = data.length ? Math.round(100 * passes / data.length) + "%" : "–";
   document.getElementById("t-ttf").textContent = avg == null ? "–" : Math.round(avg) + " min";
+
+  // feedback counts are cumulative per PR, so use the latest record of each PR that has them
+  const latest = {};
+  data.forEach(r => { if (r.feedback) latest[r.pr] = r.feedback; });
+  const fb = Object.values(latest);
+  const sum = k => fb.reduce((s, f) => s + (f[k] || 0), 0);
+  const posted = sum("posted"), accepted = sum("accepted"), wrong = sum("false_positive");
+  const pct = n => posted ? Math.round(100 * n / posted) + "%" : "–";
+  document.getElementById("t-accept").textContent = pct(accepted);
+  document.getElementById("t-fp").textContent = pct(wrong);
+  charts.push(new Chart(document.getElementById("c-fb"), {
+    type: "doughnut",
+    data: { labels: ["Accepted", "False positive", "Pending / ignored"],
+            datasets: [{ data: [accepted, wrong, Math.max(posted - accepted - wrong, 0)],
+                         backgroundColor: [css("--ok"), css("--critical"), css("--low")] }] },
+    options: { plugins: { legend: { position: "bottom" } } }
+  }));
 
   const labels = data.map((r, i) => `#${r.pr} · ${i + 1}`);
   charts.push(new Chart(document.getElementById("c-sev"), {

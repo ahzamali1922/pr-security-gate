@@ -39,21 +39,26 @@ jobs:
       # scanner that crashed; the "Enforce gate" step decides pass/fail on findings.
       - name: Run Pylint
         run: |
-          pylint --recursive=y --output-format=json demo-app/python > pylint-report.json || true
+          pylint --recursive=y --output-format=json demo-app > pylint-report.json || true
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22" # GitHub Copilot CLI needs Node 22+
 
       - name: Install ESLint
         run: |
           npm init -y
           npm install --save-dev eslint
 
+      # Optional: if the install fails, the AI step falls back to the other providers.
+      - name: Install Copilot CLI
+        continue-on-error: true
+        run: npm install -g @github/copilot
+
       - name: Run ESLint
         run: |
-          npx eslint demo-app/javascript -f json > eslint-report.json || true
+          npx eslint demo-app -f json > eslint-report.json || true
 
       - name: Validate reports
         run: |
@@ -96,6 +101,7 @@ jobs:
       - name: AI fix suggestions
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
@@ -117,9 +123,16 @@ jobs:
           key: metrics-${{ github.run_id }}
           restore-keys: metrics-
 
+      # ---------- Stage 8: false-positive and fix-acceptance tracking ----------
+      - name: Measure suggestion feedback
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python scripts/feedback.py --findings findings.json --output feedback.json
+
       - name: Record metrics
         run: |
           python scripts/metrics.py --input findings.json --history metrics/metrics.json \
+            --feedback feedback.json \
             --pr "${{ github.event.pull_request.number }}" \
             --sha "${{ github.event.pull_request.head.sha }}" \
             --run-id "${{ github.run_id }}" --fail-on "$FAIL_ON"
@@ -137,6 +150,7 @@ jobs:
           path: |
             findings.json
             enriched-findings.json
+            feedback.json
             metrics/metrics.json
 
       # ---------- Stage 5: gate ----------
