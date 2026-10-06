@@ -144,6 +144,11 @@ def build_prompt(finding, snippet, hint=""):
         "ast.literal_eval, with `import ast` as the first replacement line, indented like the "
         "flagged line. Never 'sandbox' eval by restricting its builtins; that is not safe. "
         "Fix only this finding; never put the fix for a different line here.\n"
+        "For a syntax-error finding, give the one-line fix for the line that CAUSES the error; "
+        "it can be the line before the reported one, so set \"line\" to it (for example a `try:` "
+        "line with stray text after the colon). Do this even if other lines in the file are "
+        "also broken: a syntax error hides the rest, and the next scan reports the next one. "
+        "Do not refuse because more than one line is broken.\n"
         'Reply with ONLY a JSON object: {"line": <number of the line to replace>, '
         '"fix": "<the corrected line(s) of code only, without '
         'line numbers or markdown, or one short instruction if code is not appropriate>", '
