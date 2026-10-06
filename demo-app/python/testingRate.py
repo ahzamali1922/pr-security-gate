@@ -2,7 +2,7 @@
 def add_prices(prices):
     """Return the total of all prices plus tax."""
     tax = 5
-    return sum(prices) + taxx
+    return sum(prices) + tax
 def run_formula(text):
     """Evaluate a formula typed by the user."""
     return eval(text)
@@ -11,7 +11,7 @@ def read_config(path):
     try:
         with open(path, encoding="utf-8") as handle:
             return handle.read()
-    except:
+    except Exception:
         return ""
 def on_click(event):
     """Button callback; the UI framework always passes the event."""
