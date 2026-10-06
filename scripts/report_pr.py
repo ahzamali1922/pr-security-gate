@@ -130,7 +130,7 @@ def post_comment(body, repo, pr_number, token, api_url="https://api.github.com")
 
 # ---- inline "Commit suggestion" comments (human applies each fix) ----
 
-DELETE_OK = {"unused-import", "unused-variable", "no-unused-vars"}
+DELETE_OK = {"unused-import", "unused-variable", "no-unused-vars", "pointless-statement"}
 COMMENT_PREFIXES = ("#", "//", "/*", "*")
 MAX_SUGGESTIONS = 20
 
@@ -171,21 +171,23 @@ def suggestion_text(finding, original_line):
     return None if text.rstrip() == original_line.rstrip() else text
 
 
-def suggestion_body(finding, text):
+def suggestion_body(finding, text, line=None):
+    line = line or finding["line"]
     marker = "<!-- pr-security-gate:{}:{}:{}:{} -->".format(
-        finding["file"], finding["line"], finding["rule"],
+        finding["file"], line, finding["rule"],
         hashlib.sha1(text.encode("utf-8")).hexdigest()[:8])
     block = "```suggestion\n" + (text + "\n" if text else "") + "```"
     s = finding["suggestion"]
+    where = "" if line == finding["line"] else f" (flagged at line {finding['line']}, the cause is here)"
     return "\n".join([
         marker,
-        f"🤖 **{finding['rule']}** ({finding['severity']}) — {finding['message']}",
+        f"🤖 **{finding['rule']}** ({finding['severity']}) — {finding['message']}{where}",
         "",
         f"_Why:_ {s['rationale']}",
         "",
         block,
         "",
-        "_Review the change, then click **Commit suggestion**. The scan re-runs on the new "
+        "_Review the change, then click **Apply suggestion**. The scan re-runs on the new "
         "commit; a human approval is still required to merge._",
     ])
 
@@ -204,19 +206,22 @@ def build_suggestion_comments(findings, diff_lines, existing_text="", read=read_
     Only lines that are inside the PR diff, still match the scanned file, and were not
     already suggested on an earlier run are included.
     """
-    comments = []
+    comments, used = [], set()
     for f in findings:
-        original = diff_lines.get(f["file"], {}).get(f["line"])
-        current = read(f["file"], f["line"])
+        # the model may point at a different line than the flagged one (e.g. a misspelled def)
+        line = (f.get("suggestion") or {}).get("line") or f["line"]
+        original = diff_lines.get(f["file"], {}).get(line)
+        current = read(f["file"], line)
         if original is None or current is None or original.rstrip() != current.rstrip():
             continue
         text = suggestion_text(f, original)
-        if text is None:
+        if text is None or (f["file"], line) in used:
             continue
-        body = suggestion_body(f, text)
+        body = suggestion_body(f, text, line)
         if body.splitlines()[0] in existing_text:
             continue
-        comments.append({"path": f["file"], "line": f["line"], "side": "RIGHT", "body": body})
+        used.add((f["file"], line))
+        comments.append({"path": f["file"], "line": line, "side": "RIGHT", "body": body})
         if len(comments) >= MAX_SUGGESTIONS:
             break
     return comments
@@ -246,7 +251,7 @@ def post_suggestions(findings, repo, pr_number, sha, token, api_url="https://api
         "commit_id": sha,
         "event": "COMMENT",
         "body": f"🔒 PR Security Gate: {len(comments)} fix(es) can be applied. Open **Files changed** "
-                "and click **Commit suggestion** on the ones you accept.",
+                "and click **Apply suggestion** on the ones you accept.",
         "comments": comments,
     })
     return len(comments)

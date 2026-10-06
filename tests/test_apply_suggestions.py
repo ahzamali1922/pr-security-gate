@@ -6,6 +6,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "scripts"))
 
 import report_pr  # noqa: E402
+import suggest_fixes  # noqa: E402
 
 PATCH = "@@ -1,3 +1,4 @@\n import os\n+try:\n+    run()\n+except:\n     pass\n-old\n"
 
@@ -85,6 +86,49 @@ class BuildCommentsTest(unittest.TestCase):
         out = report_pr.build_suggestion_comments(
             [finding("", rule="unused-import", line=1)], diff, read=lambda *_: "import os")
         self.assertIn("```suggestion\n```", out[0]["body"])
+
+
+class TargetLineTest(unittest.TestCase):
+    DIFF = {"a.py": {3: "def calculateds_discount(p):", 26: "    calculate_discount(p)"}}
+
+    def test_fix_goes_on_the_line_the_model_names(self):
+        f = finding("def calculate_discount(p):", rule="undefined-variable", line=26)
+        f["suggestion"]["line"] = 3
+        out = report_pr.build_suggestion_comments(
+            [f], self.DIFF, read=lambda path, line: self.DIFF["a.py"][line])
+        self.assertEqual(out[0]["line"], 3)
+        self.assertIn("flagged at line 26", out[0]["body"])
+        self.assertIn("```suggestion\ndef calculate_discount(p):\n```", out[0]["body"])
+
+    def test_pointless_statement_is_deleted(self):
+        diff = {"a.py": {1: "dc"}}
+        out = report_pr.build_suggestion_comments(
+            [finding("", rule="pointless-statement", line=1)], diff, read=lambda *_: "dc")
+        self.assertIn("```suggestion\n```", out[0]["body"])
+
+    def test_one_comment_per_target_line(self):
+        diff = {"a.py": {1: "dc"}}
+        a = finding("", rule="pointless-statement", line=1)
+        b = finding("", rule="unused-variable", line=1)
+        out = report_pr.build_suggestion_comments([a, b], diff, read=lambda *_: "dc")
+        self.assertEqual(len(out), 1)
+
+
+class ReplyLineTest(unittest.TestCase):
+    def test_reply_line(self):
+        self.assertEqual(suggest_fixes.reply_line('{"line": 3, "fix": "x", "rationale": "y"}'), 3)
+        self.assertIsNone(suggest_fixes.reply_line('{"fix": "x", "rationale": "y"}'))
+        self.assertIsNone(suggest_fixes.reply_line('{"line": "3", "fix": "x", "rationale": "y"}'))
+
+    def test_enrich_records_other_line_only(self):
+        f = finding("x", rule="undefined-variable", line=26)
+        f.pop("suggestion")
+        other = suggest_fixes.enrich([f], token="t",
+                                     llm=lambda *_: '{"line": 3, "fix": "def a():", "rationale": "typo"}')
+        same = suggest_fixes.enrich([f], token="t",
+                                    llm=lambda *_: '{"line": 26, "fix": "a()", "rationale": "r"}')
+        self.assertEqual(other[0]["suggestion"]["line"], 3)
+        self.assertNotIn("line", same[0]["suggestion"])
 
 
 if __name__ == "__main__":

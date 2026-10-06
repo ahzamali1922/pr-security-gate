@@ -36,6 +36,7 @@ GROQ_MODEL = "llama-3.3-70b-versatile"
 GROK_ENDPOINT = "https://api.x.ai/v1/chat/completions"
 GROK_MODEL = "grok-3-mini"
 CONTEXT_LINES = 8
+WHOLE_FILE_LINES = 150  # send the whole file when it is small, so the model can fix the real cause
 
 FALLBACK_HINTS = {
     "unused-import": ("Remove the unused import.", "Unused imports add clutter and can hide real dependencies."),
@@ -83,6 +84,8 @@ def read_snippet(path, line, context=CONTEXT_LINES):
         return ""
     start = max(line - 1 - context, 0)
     end = min(line + context, len(lines))
+    if len(lines) <= WHOLE_FILE_LINES:
+        start, end = 0, len(lines)
     return "\n".join(f"{n + 1}: {lines[n]}" for n in range(start, end))
 
 
@@ -93,12 +96,15 @@ def build_prompt(finding, snippet):
         f"Severity: {finding['severity']}\nMessage: {finding['message']}\n"
         f"File: {finding['file']}\nFlagged line: {finding['line']}\n\n"
         f"Code (each line prefixed with its line number):\n{snippet}\n\n"
-        "Fix ONLY the problem reported at the flagged line. Do not rewrite unrelated code.\n"
-        "The fix replaces the flagged line, so keep its indentation and original behaviour. "
-        "Never answer with a comment or by deleting logic; if the line is an unused import or "
-        "variable, answer with an empty string. If one line cannot fix it safely, give a short "
-        "instruction instead of code.\n"
-        'Reply with ONLY a JSON object: {"fix": "<the corrected line(s) of code only, without '
+        "Fix ONLY the problem reported. Do not rewrite unrelated code.\n"
+        "The fix replaces ONE line, so keep its indentation and original behaviour. By default that "
+        "is the flagged line. If the real cause is on another line (for example a misspelled "
+        "function name at its definition), set \"line\" to that line number and give the corrected "
+        "replacement for THAT line. Never answer with a comment or by deleting logic; if the line "
+        "is an unused import or variable or a stray statement with no effect, answer with an empty "
+        "string. If one line cannot fix it safely, give a short instruction instead of code.\n"
+        'Reply with ONLY a JSON object: {"line": <number of the line to replace>, '
+        '"fix": "<the corrected line(s) of code only, without '
         'line numbers or markdown, or one short instruction if code is not appropriate>", '
         '"rationale": "<one sentence explaining why>"}.'
     )
@@ -201,18 +207,32 @@ def pick_groq_model(token, endpoint=GROQ_ENDPOINT, default=GROQ_MODEL):
     return chat[0] if chat else default
 
 
-def parse_reply(text):
-    """Extract {"fix", "rationale"} from a model reply, tolerating code fences."""
+def load_reply(text):
+    """Parse the JSON object in a model reply, tolerating code fences."""
     raw = text
     text = (text or "").strip()
     start, end = text.find("{"), text.rfind("}")
     if start == -1 or end <= start:
         raise ValueError(f"no JSON object in model reply: {raw!r:.200}")
+    data = json.loads(text[start:end + 1])
+    if not isinstance(data, dict):
+        raise ValueError(f"model reply is not a JSON object: {raw!r:.200}")
+    return data
+
+
+def parse_reply(text):
+    """Extract {"fix", "rationale"} from a model reply, tolerating code fences."""
+    data = load_reply(text)
     try:
-        data = json.loads(text[start:end + 1])
         return str(data["fix"]).strip(), str(data["rationale"]).strip()
-    except (KeyError, TypeError) as exc:
-        raise ValueError(f"model reply missing fix/rationale: {raw!r:.200}") from exc
+    except KeyError as exc:
+        raise ValueError(f"model reply missing fix/rationale: {text!r:.200}") from exc
+
+
+def reply_line(text):
+    """Line number the model wants to replace, or None (use the flagged line)."""
+    value = load_reply(text).get("line")
+    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 1 else None
 
 
 def fallback(finding):
@@ -233,8 +253,12 @@ def enrich(findings, token=None, model=DEFAULT_MODEL, endpoint=DEFAULT_ENDPOINT,
         if token and index < max_ai:
             try:
                 snippet = read_snippet(finding["file"], finding["line"])
-                fix, why = parse_reply(llm(build_prompt(finding, snippet), token, model, endpoint))
+                reply = llm(build_prompt(finding, snippet), token, model, endpoint)
+                fix, why = parse_reply(reply)
                 suggestion = {"fix": fix, "rationale": why, "source": model}
+                target = reply_line(reply)
+                if target and target != finding["line"]:
+                    suggestion["line"] = target
             except (urllib.error.URLError, OSError, KeyError, ValueError, IndexError) as exc:
                 print(f"AI suggestion failed for {finding['file']}:{finding['line']}: {exc}",
                       file=sys.stderr)
