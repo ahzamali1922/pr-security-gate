@@ -19,8 +19,10 @@ Usage:
     python scripts/suggest_fixes.py --input findings.json --output enriched.json
 """
 import argparse
+import difflib
 import json
 import os
+import re
 import sys
 import urllib.error
 import urllib.request
@@ -89,7 +91,27 @@ def read_snippet(path, line, context=CONTEXT_LINES):
     return "\n".join(f"{n + 1}: {lines[n]}" for n in range(start, end))
 
 
-def build_prompt(finding, snippet):
+def typo_hint(finding, snippet):
+    """For an undefined name, point the model at a similarly named definition (a likely typo)."""
+    match = re.search(r"Undefined variable '(\w+)'", finding["message"])
+    if not match:
+        return ""
+    name = match.group(1)
+    defined = {}
+    for row in snippet.splitlines():
+        found = re.match(r"(\d+): *(?:def|class) +(\w+)", row)
+        if found:
+            defined[found.group(2)] = int(found.group(1))
+    close = difflib.get_close_matches(name, list(defined), n=1, cutoff=0.8)
+    if not close:
+        return ""
+    return (f"Hint: '{name}' is probably a typo of '{close[0]}', defined at line {defined[close[0]]}. "
+            f"If so, fix the definition: set \"line\" to {defined[close[0]]} and rename it to '{name}' "
+            "(keep the rest of that line unchanged).
+")
+
+
+def build_prompt(finding, snippet, hint=""):
     return (
         "You are a code-review assistant in a CI security gate.\n"
         f"Tool: {finding['tool']}\nRule: {finding['rule']}\n"
@@ -253,7 +275,7 @@ def enrich(findings, token=None, model=DEFAULT_MODEL, endpoint=DEFAULT_ENDPOINT,
         if token and index < max_ai:
             try:
                 snippet = read_snippet(finding["file"], finding["line"])
-                reply = llm(build_prompt(finding, snippet), token, model, endpoint)
+                reply = llm(build_prompt(finding, snippet, typo_hint(finding, snippet)), token, model, endpoint)
                 fix, why = parse_reply(reply)
                 suggestion = {"fix": fix, "rationale": why, "source": model}
                 target = reply_line(reply)

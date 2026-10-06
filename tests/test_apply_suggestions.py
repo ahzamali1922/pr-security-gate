@@ -43,6 +43,17 @@ class SuggestionTextTest(unittest.TestCase):
     def test_rejects_rule_based_hint(self):
         self.assertIsNone(report_pr.suggestion_text(finding("except OSError:", source="rule-based"), "except:"))
 
+    def test_rejects_docstring_rules(self):
+        f = finding('"""Doc."""', rule="missing-function-docstring")
+        self.assertIsNone(report_pr.suggestion_text(f, "    x = 1"))
+
+    def test_rejects_joined_python_statements(self):
+        self.assertIsNone(report_pr.suggestion_text(finding('"""Doc."""; x = 1'), "x = 1"))
+
+    def test_allows_semicolon_in_javascript(self):
+        f = finding("const a = 1;", rule="no-var", file="a.js")
+        self.assertEqual(report_pr.suggestion_text(f, "var a = 1;"), "const a = 1;")
+
     def test_rejects_unchanged_line(self):
         self.assertIsNone(report_pr.suggestion_text(finding("except:"), "except:"))
 
@@ -112,6 +123,26 @@ class TargetLineTest(unittest.TestCase):
         b = finding("", rule="unused-variable", line=1)
         out = report_pr.build_suggestion_comments([a, b], diff, read=lambda *_: "dc")
         self.assertEqual(len(out), 1)
+
+
+class TypoHintTest(unittest.TestCase):
+    SNIPPET = "1: dc\n3: def calculateds_discount(price, discount):\n26:     calculate_discount(price)"
+
+    def test_hint_points_at_similar_definition(self):
+        f = finding("x", rule="undefined-variable", line=26)
+        f["message"] = "Undefined variable 'calculate_discount'"
+        hint = suggest_fixes.typo_hint(f, self.SNIPPET)
+        self.assertIn("calculateds_discount", hint)
+        self.assertIn("line 3", hint)
+        self.assertIn(hint, suggest_fixes.build_prompt(f, self.SNIPPET, hint))
+
+    def test_no_hint_without_close_match(self):
+        f = finding("x", rule="undefined-variable", line=1)
+        f["message"] = "Undefined variable 'zzz'"
+        self.assertEqual(suggest_fixes.typo_hint(f, self.SNIPPET), "")
+
+    def test_no_hint_for_other_messages(self):
+        self.assertEqual(suggest_fixes.typo_hint(finding("x"), self.SNIPPET), "")
 
 
 class ReplyLineTest(unittest.TestCase):

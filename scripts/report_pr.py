@@ -132,6 +132,8 @@ def post_comment(body, repo, pr_number, token, api_url="https://api.github.com")
 
 DELETE_OK = {"unused-import", "unused-variable", "no-unused-vars", "pointless-statement"}
 COMMENT_PREFIXES = ("#", "//", "/*", "*")
+# These need a new line inserted, which a one-line replacement cannot express.
+NEEDS_INSERT = {"missing-function-docstring", "missing-module-docstring", "missing-class-docstring"}
 MAX_SUGGESTIONS = 20
 
 
@@ -151,13 +153,15 @@ def parse_patch_lines(patch):
 def suggestion_text(finding, original_line):
     """Replacement text for an inline suggestion, or None if the fix is not safe to offer."""
     s = finding.get("suggestion") or {}
-    if s.get("source") == "rule-based":
+    if s.get("source") == "rule-based" or finding["rule"] in NEEDS_INSERT:
         return None
     fix = clean_fix(s.get("fix", ""))
     if not fix:
         return "" if finding["rule"] in DELETE_OK else None
     if "```" in fix:
         return None
+    if finding["file"].endswith(".py") and re.search(r";\s*\S", fix):
+        return None  # statements joined with ";" are not a real fix in Python
     lines = fix.splitlines()
     if all(l.strip().startswith(COMMENT_PREFIXES) for l in lines if l.strip()):
         return None  # a comment-only "fix" just hides the problem
