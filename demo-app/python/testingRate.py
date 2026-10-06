@@ -5,7 +5,7 @@ def add_prices(prices):
     return sum(prices) + tax
 def run_formula(text):
     """Evaluate a formula typed by the user."""
-    return eval(text)
+    return eval(text, {'__builtins__': None}, {})
 def read_config(path):
     """Read a config file, or return empty text."""
     try:
