@@ -12,7 +12,6 @@ def read_file(filename):
     except OSError:
         return None
 
-asd
 def greet_user(name):
     message = "Hello " + name
     print(message)
