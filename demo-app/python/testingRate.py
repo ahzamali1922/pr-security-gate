@@ -14,7 +14,7 @@ def readd_config(path):
             return handle.read()
     except OSError:
         return ""
-def on_click(event):
+def on_click(_event):
     """Button callback; the UI framework always passes the event."""
     print("clicked")
 def safdce_run(task):
