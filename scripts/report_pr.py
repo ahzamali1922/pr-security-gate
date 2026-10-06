@@ -271,11 +271,20 @@ def pr_diff_lines(repo, pr_number, token, api_url):
     return result
 
 
+def active_comment_text(comments):
+    """Bodies of review comments still attached to a line.
+
+    An outdated comment (its line changed, so GitHub reports line=null) can no longer be
+    applied, so it must not stop the same suggestion from being posted again.
+    """
+    return "\n".join(c.get("body", "") for c in comments if c.get("line") is not None)
+
+
 def post_suggestions(findings, repo, pr_number, sha, token, api_url="https://api.github.com"):
     """Post one review whose inline comments carry GitHub suggestion blocks. Returns the count."""
     diff_lines = pr_diff_lines(repo, pr_number, token, api_url)
     existing = api("GET", f"{api_url}/repos/{repo}/pulls/{pr_number}/comments?per_page=100", token)
-    existing_text = "\n".join(c.get("body", "") for c in existing)
+    existing_text = active_comment_text(existing)
     comments = build_suggestion_comments(findings, diff_lines, existing_text)
     if not comments:
         return 0

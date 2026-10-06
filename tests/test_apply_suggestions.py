@@ -113,6 +113,24 @@ class BuildCommentsTest(unittest.TestCase):
         self.assertIn("```suggestion\n```", out[0]["body"])
 
 
+class OutdatedCommentTest(unittest.TestCase):
+    DIFF = {"a.py": {4: "except:"}}
+
+    def test_outdated_comment_does_not_block_a_repost(self):
+        first = report_pr.build_suggestion_comments(
+            [finding("except OSError:")], self.DIFF, read=lambda *_: "except:")
+        outdated = [{"body": first[0]["body"], "line": None}]
+        active = [{"body": first[0]["body"], "line": 4}]
+        again = lambda existing: report_pr.build_suggestion_comments(  # noqa: E731
+            [finding("except OSError:")], self.DIFF, report_pr.active_comment_text(existing),
+            read=lambda *_: "except:")
+        self.assertEqual(len(again(outdated)), 1)  # line changed -> suggest again
+        self.assertEqual(again(active), [])        # still open -> do not duplicate
+
+    def test_comment_without_line_field_is_treated_as_outdated(self):
+        self.assertEqual(report_pr.active_comment_text([{"body": "x"}]), "")
+
+
 class TargetLineTest(unittest.TestCase):
     DIFF = {"a.py": {3: "def calculateds_discount(p):", 26: "    calculate_discount(p)"}}
 
