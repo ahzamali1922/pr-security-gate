@@ -151,6 +151,15 @@ def parse_patch_lines(patch):
     return lines
 
 
+STATEMENT_WORDS = {"return", "def", "class", "if", "elif", "else", "for", "while", "try", "except",
+                   "finally", "with", "import", "from", "raise", "assert", "yield"}
+
+
+def statement_kind(line):
+    word = re.match(r"\s*(\w+)", line)
+    return word.group(1) if word and word.group(1) in STATEMENT_WORDS else "other"
+
+
 def suggestion_text(finding, original_line):
     """Replacement text for an inline suggestion, or None if the fix is not safe to offer."""
     s = finding.get("suggestion") or {}
@@ -169,9 +178,16 @@ def suggestion_text(finding, original_line):
     is_sentence = "\n" not in fix and re.match(r"^[A-Z][a-z]+ ", fix)
     if is_sentence or not CODE_HINT.search(fix):
         return None
+    if statement_kind(original_line) not in {statement_kind(l) for l in lines}:
+        return None  # e.g. an assignment replaced by a return: the fix belongs to another line
     indent = original_line[:len(original_line) - len(original_line.lstrip())]
     if not lines[0].startswith((" ", "\t")):
-        lines = [indent + l if l.strip() else l for l in lines]
+        # the first line lost its indent when the reply was trimmed; later lines either already
+        # carry the absolute indent of the file or are written flush-left
+        rest = [l for l in lines[1:] if l.strip()]
+        absolute = bool(rest) and all(len(l) - len(l.lstrip()) >= len(indent) for l in rest)
+        tail = lines[1:] if absolute else [indent + l if l.strip() else l for l in lines[1:]]
+        lines = [indent + lines[0]] + tail
     text = "\n".join(lines)
     return None if text.rstrip() == original_line.rstrip() else text
 

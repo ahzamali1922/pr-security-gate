@@ -136,6 +136,10 @@ def build_prompt(finding, snippet, hint=""):
         "replacement for THAT line. Never answer with a comment or by deleting logic; if the line "
         "is an unused import or variable or a stray statement with no effect, answer with an empty "
         "string. If one line cannot fix it safely, give a short instruction instead of code.\n"
+        "The replacement may span several lines when needed. For eval() or exec() use "
+        "ast.literal_eval, with `import ast` as the first replacement line, indented like the "
+        "flagged line. Never 'sandbox' eval by restricting its builtins; that is not safe. "
+        "Fix only this finding; never put the fix for a different line here.\n"
         'Reply with ONLY a JSON object: {"line": <number of the line to replace>, '
         '"fix": "<the corrected line(s) of code only, without '
         'line numbers or markdown, or one short instruction if code is not appropriate>", '

@@ -54,6 +54,20 @@ class SuggestionTextTest(unittest.TestCase):
         f = finding("const a = 1;", rule="no-var", file="a.js")
         self.assertEqual(report_pr.suggestion_text(f, "var a = 1;"), "const a = 1;")
 
+    def test_rejects_fix_that_changes_statement_kind(self):
+        f = finding("return sum(prices) + tax", rule="unused-variable")
+        self.assertIsNone(report_pr.suggestion_text(f, "    tax = 5"))
+
+    def test_allows_multiline_eval_fix_keeping_the_return(self):
+        f = finding("    import ast\n    return ast.literal_eval(text)", rule="eval-used")
+        text = report_pr.suggestion_text(f, "    return eval(text)")
+        self.assertEqual(text, "    import ast\n    return ast.literal_eval(text)")
+
+    def test_multiline_fix_written_flush_left_is_indented(self):
+        f = finding("import ast\nreturn ast.literal_eval(text)", rule="eval-used")
+        text = report_pr.suggestion_text(f, "    return eval(text)")
+        self.assertEqual(text, "    import ast\n    return ast.literal_eval(text)")
+
     def test_rejects_unchanged_line(self):
         self.assertIsNone(report_pr.suggestion_text(finding("except:"), "except:"))
 
