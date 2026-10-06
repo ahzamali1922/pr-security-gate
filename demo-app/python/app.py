@@ -1,5 +1,4 @@
 import os
-import math
 import pandas as pd 
 
 def calculatrre_discount(price, discount):
