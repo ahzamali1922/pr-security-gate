@@ -1,3 +1,3 @@
 print("Hello World")
 def name():
-    hi here
+    print("hi here")
