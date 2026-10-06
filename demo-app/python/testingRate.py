@@ -5,13 +5,13 @@ def add_prices(prices):
     return sum(prices) + tax
 def run_formula(text):
     """Evaluate a formula typed by the user."""
-    return eval(text)
+    return eval(text, {'__builtins__': None}, {})
 def read_config(path):
     """Read a config file, or return empty text."""
     try:
         with open(path, encoding="utf-8") as handle:
             return handle.read()
-    except Exception:
+    except OSError:
         return ""
 def on_click(event):
     """Button callback; the UI framework always passes the event."""
