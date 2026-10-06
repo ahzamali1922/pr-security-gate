@@ -23,5 +23,3 @@ def safdce_run(task):
         task()
     except Exception as exc:
         print("task failed:", exc)
-dcd
-cscsd/csdscs
