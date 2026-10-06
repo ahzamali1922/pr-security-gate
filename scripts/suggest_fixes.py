@@ -5,7 +5,8 @@ If no token is set, or the call fails, a built-in rule-based hint is used so the
 pipeline never breaks because the AI provider is unavailable.
 
 Environment:
-    GEMINI_API_KEY     if set, use Google Gemini (highest priority)
+    COPILOT_GITHUB_TOKEN  if set (and the `copilot` CLI is installed), use GitHub Copilot CLI (highest priority)
+    GEMINI_API_KEY     if set, use Google Gemini
     GROQ_API_KEY       if set (and no Gemini key), use Groq
     XAI_API_KEY        if set (and no Gemini key), use Grok (xAI)
     ANTHROPIC_API_KEY  if set (and none of the above), use the Anthropic API
@@ -19,8 +20,12 @@ Usage:
     python scripts/suggest_fixes.py --input findings.json --output enriched.json
 """
 import argparse
+import difflib
 import json
 import os
+import re
+import shutil
+import subprocess
 import sys
 import urllib.error
 import urllib.request
@@ -36,6 +41,8 @@ GROQ_MODEL = "llama-3.3-70b-versatile"
 GROK_ENDPOINT = "https://api.x.ai/v1/chat/completions"
 GROK_MODEL = "grok-3-mini"
 CONTEXT_LINES = 8
+COPILOT_MODEL = "copilot"  # sentinel: let the Copilot CLI pick its default model
+WHOLE_FILE_LINES = 150  # send the whole file when it is small, so the model can fix the real cause
 
 FALLBACK_HINTS = {
     "unused-import": ("Remove the unused import.", "Unused imports add clutter and can hide real dependencies."),
@@ -83,18 +90,62 @@ def read_snippet(path, line, context=CONTEXT_LINES):
         return ""
     start = max(line - 1 - context, 0)
     end = min(line + context, len(lines))
+    if len(lines) <= WHOLE_FILE_LINES:
+        start, end = 0, len(lines)
     return "\n".join(f"{n + 1}: {lines[n]}" for n in range(start, end))
 
 
-def build_prompt(finding, snippet):
+def typo_candidate(finding, snippet):
+    """(undefined name, similarly named definition, its line) for a likely typo, else None."""
+    match = re.search(r"Undefined variable '(\w+)'", finding["message"])
+    if not match:
+        return None
+    name = match.group(1)
+    defined = {}
+    for row in snippet.splitlines():
+        found = re.match(r"(\d+): *(?:def|class) +(\w+)", row)
+        if found:
+            defined[found.group(2)] = int(found.group(1))
+    close = difflib.get_close_matches(name, list(defined), n=1, cutoff=0.8)
+    return (name, close[0], defined[close[0]]) if close else None
+
+
+def typo_hint(finding, snippet):
+    """For an undefined name, point the model at a similarly named definition (a likely typo)."""
+    candidate = typo_candidate(finding, snippet)
+    if not candidate:
+        return ""
+    name, close, line = candidate
+    return (f"Hint: '{name}' is probably a typo of '{close}', defined at line {line}. "
+            f"If so, fix the definition: set \"line\" to {line} and rename it to '{name}' "
+            "(keep the rest of that line unchanged).\n")
+
+
+def fix_targets_definition(fix, candidate):
+    """True if `fix` is the corrected definition line (the model forgot to say which line)."""
+    return bool(candidate) and re.match(rf"\s*(?:def|class)\s+{re.escape(candidate[0])}\b", fix) is not None
+
+
+def build_prompt(finding, snippet, hint=""):
     return (
         "You are a code-review assistant in a CI security gate.\n"
         f"Tool: {finding['tool']}\nRule: {finding['rule']}\n"
         f"Severity: {finding['severity']}\nMessage: {finding['message']}\n"
         f"File: {finding['file']}\nFlagged line: {finding['line']}\n\n"
-        f"Code (each line prefixed with its line number):\n{snippet}\n\n"
-        "Fix ONLY the problem reported at the flagged line. Do not rewrite unrelated code.\n"
-        'Reply with ONLY a JSON object: {"fix": "<the corrected line(s) of code only, without '
+        f"Code (each line prefixed with its line number):\n{snippet}\n\n{hint}"
+        "Fix ONLY the problem reported. Do not rewrite unrelated code.\n"
+        "The fix replaces ONE line, so keep its indentation and original behaviour. By default that "
+        "is the flagged line. If the real cause is on another line (for example a misspelled "
+        "function name at its definition), set \"line\" to that line number and give the corrected "
+        "replacement for THAT line. Never answer with a comment or by deleting logic; if the line "
+        "is an unused import or variable or a stray statement with no effect, answer with an empty "
+        "string. If one line cannot fix it safely, give a short instruction instead of code.\n"
+        "The replacement may span several lines when needed. For eval() or exec() use "
+        "ast.literal_eval, with `import ast` as the first replacement line, indented like the "
+        "flagged line. Never 'sandbox' eval by restricting its builtins; that is not safe. "
+        "Fix only this finding; never put the fix for a different line here.\n"
+        'Reply with ONLY a JSON object: {"line": <number of the line to replace>, '
+        '"fix": "<the corrected line(s) of code only, without '
         'line numbers or markdown, or one short instruction if code is not appropriate>", '
         '"rationale": "<one sentence explaining why>"}.'
     )
@@ -136,6 +187,26 @@ def call_llm(prompt, token, model, endpoint):
         },
     )
     return payload["choices"][0]["message"].get("content") or ""
+
+
+def call_copilot(prompt, token, model, endpoint):
+    """GitHub Copilot CLI in non-interactive mode (`copilot -p`, `-s` prints only the reply).
+
+    No tool permissions are granted, so Copilot can only answer the prompt, not run commands.
+    """
+    command = [shutil.which("copilot") or "copilot", "-p", prompt, "-s"]
+    if model and model != COPILOT_MODEL:
+        command += ["--model", model]
+    try:
+        done = subprocess.run(
+            command, capture_output=True, text=True, encoding="utf-8", stdin=subprocess.DEVNULL,
+            env={**os.environ, "COPILOT_GITHUB_TOKEN": token},
+            timeout=int(os.environ.get("COPILOT_TIMEOUT", "120")), check=False)
+    except subprocess.SubprocessError as exc:  # timeout etc.; enrich() falls back on OSError
+        raise OSError(f"copilot CLI failed: {exc}") from exc
+    if done.returncode != 0:
+        raise OSError(f"copilot CLI exited {done.returncode}: {(done.stderr or done.stdout)[:300]}")
+    return done.stdout
 
 
 def call_anthropic(prompt, token, model, endpoint):
@@ -197,18 +268,32 @@ def pick_groq_model(token, endpoint=GROQ_ENDPOINT, default=GROQ_MODEL):
     return chat[0] if chat else default
 
 
-def parse_reply(text):
-    """Extract {"fix", "rationale"} from a model reply, tolerating code fences."""
+def load_reply(text):
+    """Parse the JSON object in a model reply, tolerating code fences."""
     raw = text
     text = (text or "").strip()
     start, end = text.find("{"), text.rfind("}")
     if start == -1 or end <= start:
         raise ValueError(f"no JSON object in model reply: {raw!r:.200}")
+    data = json.loads(text[start:end + 1])
+    if not isinstance(data, dict):
+        raise ValueError(f"model reply is not a JSON object: {raw!r:.200}")
+    return data
+
+
+def parse_reply(text):
+    """Extract {"fix", "rationale"} from a model reply, tolerating code fences."""
+    data = load_reply(text)
     try:
-        data = json.loads(text[start:end + 1])
         return str(data["fix"]).strip(), str(data["rationale"]).strip()
-    except (KeyError, TypeError) as exc:
-        raise ValueError(f"model reply missing fix/rationale: {raw!r:.200}") from exc
+    except KeyError as exc:
+        raise ValueError(f"model reply missing fix/rationale: {text!r:.200}") from exc
+
+
+def reply_line(text):
+    """Line number the model wants to replace, or None (use the flagged line)."""
+    value = load_reply(text).get("line")
+    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 1 else None
 
 
 def fallback(finding):
@@ -229,8 +314,14 @@ def enrich(findings, token=None, model=DEFAULT_MODEL, endpoint=DEFAULT_ENDPOINT,
         if token and index < max_ai:
             try:
                 snippet = read_snippet(finding["file"], finding["line"])
-                fix, why = parse_reply(llm(build_prompt(finding, snippet), token, model, endpoint))
+                reply = llm(build_prompt(finding, snippet, typo_hint(finding, snippet)), token, model, endpoint)
+                fix, why = parse_reply(reply)
                 suggestion = {"fix": fix, "rationale": why, "source": model}
+                target = reply_line(reply)
+                if not target and fix_targets_definition(fix, typo_candidate(finding, snippet)):
+                    target = typo_candidate(finding, snippet)[2]
+                if target and target != finding["line"]:
+                    suggestion["line"] = target
             except (urllib.error.URLError, OSError, KeyError, ValueError, IndexError) as exc:
                 print(f"AI suggestion failed for {finding['file']}:{finding['line']}: {exc}",
                       file=sys.stderr)
@@ -249,12 +340,19 @@ def main(argv=None):
     with open(args.input, encoding="utf-8") as handle:
         findings = json.load(handle)
 
-    # Provider priority: Gemini, Groq, Grok (xAI), Anthropic, then GitHub Models.
+    # Provider priority: Copilot CLI, Gemini, Groq, Grok (xAI), Anthropic, then GitHub Models.
+    copilot_key = os.environ.get("COPILOT_GITHUB_TOKEN")
+    if copilot_key and not shutil.which("copilot"):
+        print("COPILOT_GITHUB_TOKEN is set but the `copilot` CLI is not installed; using another provider")
+        copilot_key = None
     gemini_key = os.environ.get("GEMINI_API_KEY")
     groq_key = os.environ.get("GROQ_API_KEY")
     grok_key = os.environ.get("XAI_API_KEY")
     anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
-    if gemini_key:
+    if copilot_key:
+        print("AI provider: GitHub Copilot CLI")
+        provider = dict(token=copilot_key, model=COPILOT_MODEL, endpoint="", llm=call_copilot)
+    elif gemini_key:
         print("AI provider: Gemini")
         provider = dict(token=gemini_key, model=GEMINI_MODEL, endpoint=GEMINI_ENDPOINT, llm=call_gemini)
     elif groq_key:

@@ -1,20 +1,15 @@
-import os
-import math
-
 
 def calculate_discount(price, discount):
     result = price - (price * discount)
     return result
 
-
-def read_file(filename):
+def read_fsddsile(filename):
     try:
         file = open(filename, "r")
         data = file.read()
         return data
     except OSError:
         return None
-
 
 def greet_user(name):
     message = "Hello " + name
@@ -32,3 +27,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+def vedansh(): pass
