@@ -117,9 +117,16 @@ jobs:
           key: metrics-${{ github.run_id }}
           restore-keys: metrics-
 
+      # ---------- Stage 8: false-positive and fix-acceptance tracking ----------
+      - name: Measure suggestion feedback
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python scripts/feedback.py --findings findings.json --output feedback.json
+
       - name: Record metrics
         run: |
           python scripts/metrics.py --input findings.json --history metrics/metrics.json \
+            --feedback feedback.json \
             --pr "${{ github.event.pull_request.number }}" \
             --sha "${{ github.event.pull_request.head.sha }}" \
             --run-id "${{ github.run_id }}" --fail-on "$FAIL_ON"
@@ -137,6 +144,7 @@ jobs:
           path: |
             findings.json
             enriched-findings.json
+            feedback.json
             metrics/metrics.json
 
       # ---------- Stage 5: gate ----------

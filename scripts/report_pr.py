@@ -12,6 +12,7 @@ Usage:
     python scripts/report_pr.py --input enriched-findings.json
 """
 import argparse
+import base64
 import hashlib
 import json
 import os
@@ -175,6 +176,14 @@ def suggestion_text(finding, original_line):
     return None if text.rstrip() == original_line.rstrip() else text
 
 
+def encode_meta(finding, text):
+    """Hidden, comment-safe metadata describing one posted suggestion (read by feedback.py)."""
+    meta = {"file": finding["file"], "rule": finding["rule"],
+            "message": finding["message"], "text": text}
+    raw = json.dumps(meta, separators=(",", ":")).encode("utf-8")
+    return "<!-- pr-gate-meta: " + base64.urlsafe_b64encode(raw).decode("ascii") + " -->"
+
+
 def suggestion_body(finding, text, line=None):
     line = line or finding["line"]
     marker = "<!-- pr-security-gate:{}:{}:{}:{} -->".format(
@@ -193,6 +202,9 @@ def suggestion_body(finding, text, line=None):
         "",
         "_Review the change, then click **Apply suggestion**. The scan re-runs on the new "
         "commit; a human approval is still required to merge._",
+        "",
+        "_Wrong finding? React 👎 or reply `/false-positive` so the tool's honesty is measured._",
+        encode_meta(finding, text),
     ])
 
 
