@@ -1,7 +1,5 @@
-import os
-import pandas as pd 
 
-def calculatrre_discount(price, discount):
+def calculate_discount(price, discount):
     result = price - (price * discount)
     return result
 
