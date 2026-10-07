@@ -101,6 +101,27 @@ class SyntaxErrorVerifyTest(unittest.TestCase):
         out = verify_fixes.verify(self.SYNTAX, 2, "return  x y", self.BROKEN, self.lint_with(still))
         self.assertEqual(out["status"], "failed")
 
+    def test_next_syntax_error_is_progress_not_failure(self):
+        next_error = f("syntax-error", "Parsing failed: 'unexpected indent (a, line 3)'", line=3)
+        out = verify_fixes.verify(self.SYNTAX, 1, "y = 1", self.BROKEN, self.lint_with([next_error]))
+        self.assertEqual((out["status"], out.get("partial")), ("verified", True))
+
+    def test_same_error_with_a_different_module_name_still_counts_as_the_same(self):
+        same = f("syntax-error", "Parsing failed: 'invalid syntax (other_module, line 2)'")
+        out = verify_fixes.verify(self.SYNTAX, 2, "return  x y", self.BROKEN, self.lint_with([same]))
+        self.assertEqual(out["status"], "failed")
+
+    def test_error_signature_ignores_the_module_and_line_suffix(self):
+        a = f("syntax-error", "Parsing failed: 'invalid syntax (mod, line 9)'", line=9)
+        b = f("syntax-error", "Parsing failed: 'invalid syntax (<stdin>, line 9)'", line=9)
+        self.assertEqual(verify_fixes.error_signature(a), verify_fixes.error_signature(b))
+
+    def test_partial_fix_note_in_the_report(self):
+        item = f("syntax-error", "m")
+        item["suggestion"] = {"fix": "try:", "rationale": "r", "source": "ai",
+                              "verification": {"status": "verified", "partial": True, "reason": "x"}}
+        self.assertIn("another one", report_pr.verification_note(item["suggestion"]))
+
     def test_message_text_does_not_have_to_match_exactly(self):
         other_message = dict(self.SYNTAX, message="Parsing failed: 'invalid syntax (<stdin>, line 2)'")
         lint = lambda path, content: [other_message] if content == self.BROKEN else []  # noqa: E731

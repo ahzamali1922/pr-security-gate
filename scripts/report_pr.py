@@ -42,6 +42,9 @@ def clean_fix(fix):
 def verification_note(suggestion):
     """One line telling the reviewer whether a re-scan with this fix was clean ('' if unchecked)."""
     check = (suggestion or {}).get("verification") or {}
+    if check.get("status") == "verified" and check.get("partial"):
+        return ("✅ _Fixes this syntax error. The file has another one, which the next scan "
+                "will report._")
     if check.get("status") == "verified":
         return "✅ _Lint-verified: a re-scan with this fix no longer reports the finding._"
     if check.get("status") == "failed":

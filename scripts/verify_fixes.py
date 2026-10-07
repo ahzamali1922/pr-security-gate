@@ -20,6 +20,7 @@ import argparse
 import collections
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -81,6 +82,12 @@ def apply_fix(content, line, text):
     return "\n".join(lines)
 
 
+def error_signature(finding):
+    """(line, message without the '(module, line N)' part) identifying one syntax error."""
+    message = re.sub(r" ?\([^()]*, line \d+\)", "", finding["message"])
+    return finding["line"], message
+
+
 def count(findings):
     return collections.Counter((f["rule"], f["message"]) for f in findings)
 
@@ -102,9 +109,17 @@ def verify(finding, line, text, content, lint=lint_file, fail_on="high", baselin
     after_findings = lint(path, apply_fix(content, line, text))
     if is_syntax_error:
         # A syntax error hides every other finding in the file, so whatever shows up once the
-        # file parses again was already there. The only question is whether it parses now.
-        if any(f["rule"] == "syntax-error" for f in after_findings):
-            return {"status": "failed", "reason": "the file still does not parse with this fix"}
+        # file parses again was already there. The questions are whether THIS error is gone and
+        # whether the file parses now. A file with several broken lines is fixed one error per
+        # scan, so a different syntax error further on is progress, not a failed fix.
+        remaining = [f for f in after_findings if f["rule"] == "syntax-error"]
+        if any(error_signature(f) == error_signature(finding) for f in remaining):
+            return {"status": "failed", "reason": "the same syntax error is still reported with this fix"}
+        if remaining:
+            return {"status": "verified", "partial": True,
+                    "reason": "this syntax error is fixed; the file has another one, "
+                              "which the next scan will report",
+                    "new_findings": 0}
         return {"status": "verified", "reason": "the file parses again with this fix",
                 "new_findings": len(after_findings)}
     after = count(after_findings)
