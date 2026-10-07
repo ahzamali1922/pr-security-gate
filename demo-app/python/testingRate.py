@@ -19,9 +19,7 @@ def on_click(_event):
     print("clicked")
 def safdce_run(task):
     """Last-resort guard: a failing task must never crash the app."""
-    try:safdce_run
-        task()dd
+    try:
+        task()
     except Exception as exc:
         print("task failed:", exc)
-dcd
-cscsd/csdscs
