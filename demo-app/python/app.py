@@ -16,7 +16,7 @@ def read_file(filename):
         return None
 
 
-def greet_user(name):
+def greeet_user(name):
     """Print a greeting for the given name."""
     message = "Hello " + name
     print(message)
@@ -30,7 +30,7 @@ def main():
     calculate_discount(price, discount)
 
     greet_user("Developer")
-sfsf
+
 
 if __name__ == "__main__":
     main()

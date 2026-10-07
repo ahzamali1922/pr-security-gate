@@ -3,7 +3,7 @@ def add_prices(prices):
     """Return the total of all prices plus tax."""
     tax = 5
     return sum(prices) + tax
-deff run_formula(text):
+def run_formula(text):
     """Evaluate a formula typed by the user."""
     import ast
     return ast.literal_eval(text)
