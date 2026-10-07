@@ -109,6 +109,13 @@ jobs:
           MODELS_TOKEN: ${{ secrets.MODELS_TOKEN }}
         run: python scripts/suggest_fixes.py --input findings.json --output enriched-findings.json
 
+      # ---------- Stage 4b: verify AI fixes ----------
+      # Re-runs the linter on each fixed file (in memory) so only fixes that really clear the
+      # finding get an Apply button. If this step fails, the report simply skips verification.
+      - name: Verify AI fixes
+        continue-on-error: true
+        run: python scripts/verify_fixes.py --input enriched-findings.json --summary verification.json --fail-on "$FAIL_ON"
+
       # ---------- Stage 3: report to PR ----------
       - name: Report to PR
         env:
@@ -132,7 +139,7 @@ jobs:
       - name: Record metrics
         run: |
           python scripts/metrics.py --input findings.json --history metrics/metrics.json \
-            --feedback feedback.json \
+            --feedback feedback.json --verification verification.json \
             --pr "${{ github.event.pull_request.number }}" \
             --sha "${{ github.event.pull_request.head.sha }}" \
             --run-id "${{ github.run_id }}" --fail-on "$FAIL_ON"
@@ -151,6 +158,7 @@ jobs:
             findings.json
             enriched-findings.json
             feedback.json
+            verification.json
             metrics/metrics.json
 
       # ---------- Stage 5: gate ----------

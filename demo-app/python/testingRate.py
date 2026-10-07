@@ -3,7 +3,7 @@ def add_prices(prices):
     """Return the total of all prices plus tax."""
     tax = 5
     return sum(prices) + tax
-def run_formula(text):
+deff run_formula(text):
     """Evaluate a formula typed by the user."""
     import ast
     return ast.literal_eval(text)
@@ -14,7 +14,7 @@ def read_config(path):
             return handle.read()
     except OSError:
         return ""
-def on_click(event):
+def on_click(_event):
     """Button callback; the UI framework always passes the event."""
     print("clicked")
 def safe_run(task):
