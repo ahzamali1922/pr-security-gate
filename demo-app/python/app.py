@@ -44,7 +44,7 @@ def run_expression(expr):
     return eval(expr)
 
 
-def greet_user(name):
+def greeet_user(name):
     message = "Hello " + name  # TypeError if name is not a str
     print(message)
 
@@ -54,7 +54,7 @@ def main():
     discount = 0.2
 
     calculate_discount(price, discount)
-
+sdff
     greet_user("Developer")
     greet_user(42)
 
