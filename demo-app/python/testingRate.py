@@ -21,5 +21,5 @@ def safe_run(task):
     """Last-resort guard: a failing task must never crash the app."""
     try:
         task()
-    except Exception as exc:
+    except (RuntimeError, TypeError, ValueError) as exc:
         print("task failed:", exc)
