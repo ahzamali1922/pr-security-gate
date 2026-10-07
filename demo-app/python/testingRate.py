@@ -3,7 +3,7 @@ def add_prices(prices):
     """Return the total of all prices plus tax."""
     tax = 5
     return sum(prices) + tax
-deff run_formula(text):
+def run_formula(text):
     """Evaluate a formula typed by the user."""
     import ast
     return ast.literal_eval(text)
@@ -21,5 +21,5 @@ def safe_run(task):
     """Last-resort guard: a failing task must never crash the app."""
     try:
         task()
-    except Exception as exc:
+    except (RuntimeError, TypeError, ValueError) as exc:
         print("task failed:", exc)
