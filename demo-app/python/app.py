@@ -11,6 +11,13 @@ def calculate_discount(price, discount):
     result = price - (price * discount)
     return result
 
+def read_fsddsile(filename):
+    try:
+        file = open(filename, "r")
+        data = file.read()
+        return data
+    except OSError:
+        return None
 
 def average_price(prices):
     return sum(prices) / len(prices)  # ZeroDivisionError on empty list
@@ -61,3 +68,5 @@ sdff
 
 if __name__ == "__main__":
     main()
+
+def vedansh(): pass
