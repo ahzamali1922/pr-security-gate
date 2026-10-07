@@ -16,7 +16,7 @@ def read_file(filename):
         return None
 
 
-def greeet_user(name):
+def greet_user(name):
     """Print a greeting for the given name."""
     message = "Hello " + name
     print(message)
