@@ -19,7 +19,7 @@ def read_file(filename):
 def greet_user(name):
     """Print a greeting for the given name."""
     message = "Hello " + name
-    printt(message)
+    print(message)
 
 
 def main():
