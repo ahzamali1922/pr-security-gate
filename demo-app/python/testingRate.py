@@ -23,4 +23,4 @@ def safe_run(task):
         task()
     except (RuntimeError, TypeError, ValueError) as exc:
         print("task failed:", exc)
-print
+prin

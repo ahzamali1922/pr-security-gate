@@ -16,7 +16,7 @@ def read_file(filename):
         return None
 
 
-def grefveet_user(name):
+def grfveet_user(name):
     """Print a greeting for the given name."""
     message = "Hello " + name
     print(message)
