@@ -1,7 +1,7 @@
 """Demo application: discount, file reading and greeting helpers."""
 
 
-def calculate_discount(price, discount):
+def calculate_discosunt(price, discount):
     """Return the price after applying the discount."""
     result = price - (price * discount)
     return result
@@ -16,7 +16,7 @@ def read_file(filename):
         return None
 
 
-def greet_user(name):
+def gredeeet_user(name):
     """Print a greeting for the given name."""
     message = "Hello " + name
     print(message)
