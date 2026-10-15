@@ -24,7 +24,8 @@ def load_history(path):
         return json.load(handle)
 
 
-def make_record(findings, history, pr, sha, run_id, fail_on="high", now=None):
+def make_record(findings, history, pr, sha, run_id, fail_on="high", now=None, feedback=None,
+                verification=None):
     now = now or datetime.datetime.now(datetime.timezone.utc)
     limit = SEVERITY_ORDER.index(fail_on)
     severity = {s: sum(1 for f in findings if f["severity"] == s) for s in SEVERITY_ORDER}
@@ -39,6 +40,8 @@ def make_record(findings, history, pr, sha, run_id, fail_on="high", now=None):
         "severity": severity,
         "gate_passed": passed,
         "time_to_fix_minutes": None,
+        "feedback": feedback,  # posted / accepted / false_positive counts, or None
+        "verification": verification,  # checked / verified / failed / skipped, or None
     }
     if passed:
         # find the first failing run in the current streak of failures for this PR
@@ -61,13 +64,22 @@ def main(argv=None):
     parser.add_argument("--sha", default="")
     parser.add_argument("--run-id", default="")
     parser.add_argument("--fail-on", default="high", choices=SEVERITY_ORDER)
+    parser.add_argument("--feedback", help="feedback.json from scripts/feedback.py (optional)")
+    parser.add_argument("--verification", help="verification.json from scripts/verify_fixes.py (optional)")
     args = parser.parse_args(argv)
 
     with open(args.input, encoding="utf-8") as handle:
         findings = json.load(handle)
 
     history = load_history(args.history)
-    record = make_record(findings, history, args.pr, args.sha, args.run_id, args.fail_on)
+    feedback = load_history(args.feedback) if args.feedback else None
+    if not feedback:
+        feedback = None  # missing file or empty result
+    verification = load_history(args.verification) if args.verification else None
+    if not verification:
+        verification = None
+    record = make_record(findings, history, args.pr, args.sha, args.run_id, args.fail_on,
+                         feedback=feedback, verification=verification)
     history.append(record)
 
     os.makedirs(os.path.dirname(args.history) or ".", exist_ok=True)

@@ -54,8 +54,8 @@ Severity scale:
 ```
 pip install pylint
 npm install --save-dev eslint
-pylint --recursive=y --output-format=json demo-app/python > pylint-report.json
-npx eslint demo-app/javascript -f json > eslint-report.json
+pylint --recursive=y --output-format=json demo-app > pylint-report.json
+npx eslint demo-app -f json > eslint-report.json
 python scripts/parse_findings.py --pylint pylint-report.json --eslint eslint-report.json
 python scripts/suggest_fixes.py
 python scripts/report_pr.py
